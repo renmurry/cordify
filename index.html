@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Coordinate Converter (DMS ⇄ DD)</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  label, input, select { margin: 4px; }
+  .container { padding: 16px; border: 1px solid #333; max-width: 720px; margin: 24px auto; border-radius: 8px; }
+  .row { margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  textarea.result {
+    width: 100%; height: 80px; background: #f3f3f3; border-radius: 4px; padding: 8px;
+    resize: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px; border: 1px solid #ccc; color: #333;
+  }
+  button { cursor: pointer; padding: 6px 12px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
+
+  <!-- DMS to DD -->
+  <div>
+    <h4>DMS to DD</h4>
+
+    <!-- Single-string DMS inputs -->
+    <div class="row">
+      <label>Latitude DMS:
+        <input id="dms_lat_string" type="text" placeholder='e.g. 12°34&#39;56.7&quot; N or -12 34 56.7'>
+      </label>
+    </div>
+    <div class="row">
+      <label>Longitude DMS:
+        <input id="dms_lon_string" type="text" placeholder='e.g. 77°35&#39;12&quot; E or -77 35 12'>
+      </label>
+    </div>
+
+    <hr style="margin-top:15px; margin-bottom:15px;">
+
+    <!-- Separate D/M/S inputs (optional alternative) -->
+    <div class="row">
+      <b>Latitude (Y):</b>
+      <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg"></label>
+      <label>' <input id="dms_lat_min" type="number" step="1" placeholder="min"></label>
+      <label>" <input id="dms_lat_sec" type="number" step="any" placeholder="sec"></label>
+      <select id="dms_lat_dir">
+        <option value="N">N</option>
+        <option value="S">S</option>
+      </select>
+    </div>
+    <div class="row">
+      <b>Longitude (X):</b>
+      <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg"></label>
+      <label>' <input id="dms_lon_min" type="number" step="1" placeholder="min"></label>
+      <label>" <input id="dms_lon_sec" type="number" step="any" placeholder="sec"></label>
+      <select id="dms_lon_dir">
+        <option value="E">E</option>
+        <option value="W">W</option>
+      </select>
+    </div>
+
+    <button type="button" onclick="convertDmsToDd()">Convert to DD</button>
+    <textarea class="result" id="dd_result" readonly></textarea>
+  </div>
+
+  <hr>
+
+  <!-- DD to DMS -->
+  <div>
+    <h4>DD to DMS</h4>
+    <div class="row">
+      <b>Latitude (Y):</b>
+      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242"></label>
+    </div>
+    <div class="row">
+      <b>Longitude (X):</b>
+      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667"></label>
+    </div>
+    <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
+    <textarea class="result" id="dms_result" readonly></textarea>
+  </div>
+</div>
+
+<script>
+// ---- Robust DMS string parser ----
+// Supports: symbols/spaces, , as decimal, signed degrees, leading/trailing NSEW,
+// and partial forms: D°, D M, D M S (with or without ° ' ").
+function parseDmsString(dmsStr) {
+  if (!dmsStr) return null;
+
+  // Normalize
+  dmsStr = dmsStr.trim()
+    .replace(/[′’‘`´]/g, "'")        // variants -> '
+    .replace(/[″“”]/g, '"')          // variants -> "
+    .replace(/\u00B0/g, '°')         // ensure standard degree symbol
+    .replace(/,/g, '.')              // allow comma decimals
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+
+  // Grab leading/trailing direction
+  let leadDir = (dmsStr.match(/^[NSWE]/) || [null])[0];
+  let tailDir = (dmsStr.match(/[NSWE]$/) || [null])[0];
+
+  if (leadDir && tailDir && leadDir !== tailDir) return null; // conflicting
+  let dir = tailDir || leadDir || null;
+
+  // Strip direction chars for numeric parsing
+  if (leadDir) dmsStr = dmsStr.slice(1).trim();
+  if (tailDir) dmsStr = dmsStr.slice(0, -1).trim();
+
+  // Match deg [min] [sec] using either symbols or spaces
+  // Examples: 25 34 47.035 | 25°34'47.035" | -23° 30' | +10 12.5 | 10° | 10 12
+  const regex = /^([+-]?\d+(?:\.\d+)?)(?:[°\s]+(\d+(?:\.\d+)?))?(?:['\s]+(\d+(?:\.\d+)?))?(?:"?)$/;
+  const m = dmsStr.match(regex);
+  if (!m) return null;
+
+  let deg = parseFloat(m[1]);
+  let min = m[2] !== undefined ? parseFloat(m[2]) : 0;
+  let sec = m[3] !== undefined ? parseFloat(m[3]) : 0;
+
+  if ([deg, min, sec].some(Number.isNaN)) return null;
+  if (min < 0 || min >= 60 || sec < 0 || sec >= 60) return null;
+
+  let dd = Math.abs(deg) + (min / 60) + (sec / 3600);
+  if (deg < 0) dd = -dd; // signed degree overrides
+  if (dir === 'S' || dir === 'W') dd = -Math.abs(dd); // NSEW applies sign
+
+  return dd;
+}
+
+function dmsToDd(deg, min, sec, dir) {
+  if ([deg, min, sec].some(v => Number.isNaN(v))) return null;
+  if (min < 0 || min >= 60 || sec < 0 || sec >= 60) return null;
+  let dd = Math.abs(deg) + min / 60 + sec / 3600;
+  if (dir === "S" || dir === "W") dd *= -1;
+  if (deg < 0) dd *= -1; // if user typed negative deg, respect it
+  return dd;
+}
+
+function ddToDms(dd, latlon) {
+  if (Number.isNaN(dd)) return null;
+  const dir = latlon === "lat" ? (dd < 0 ? "S" : "N") : (dd < 0 ? "W" : "E");
+  dd = Math.abs(dd);
+  const deg = Math.floor(dd);
+  const minFloat = (dd - deg) * 60;
+  const min = Math.floor(minFloat);
+  const sec = ((minFloat - min) * 60);
+  const secStr = sec.toFixed(3).replace(/\.?0+$/,''); // trim trailing zeros
+  return `${deg}° ${min}' ${secStr}" ${dir}`;
+}
+
+function inLatRange(v) { return v >= -90 && v <= 90; }
+function inLonRange(v) { return v >= -180 && v <= 180; }
+
+function convertDmsToDd() {
+  const latStr = document.getElementById('dms_lat_string').value.trim();
+  const lonStr = document.getElementById('dms_lon_string').value.trim();
+  let dd_lat, dd_lon;
+
+  if (latStr) {
+    dd_lat = parseDmsString(latStr);
+    if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude DMS.'); return; }
+  } else {
+    dd_lat = dmsToDd(
+      parseFloat(document.getElementById('dms_lat_deg').value) || 0,
+      parseFloat(document.getElementById('dms_lat_min').value) || 0,
+      parseFloat(document.getElementById('dms_lat_sec').value) || 0,
+      document.getElementById('dms_lat_dir').value
+    );
+    if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude D/M/S.'); return; }
+  }
+
+  if (lonStr) {
+    dd_lon = parseDmsString(lonStr);
+    if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude DMS.'); return; }
+  } else {
+    dd_lon = dmsToDd(
+      parseFloat(document.getElementById('dms_lon_deg').value) || 0,
+      parseFloat(document.getElementById('dms_lon_min').value) || 0,
+      parseFloat(document.getElementById('dms_lon_sec').value) || 0,
+      document.getElementById('dms_lon_dir').value
+    );
+    if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude D/M/S.'); return; }
+  }
+
+  document.getElementById('dd_result').value =
+    `Latitude (Y): ${dd_lat.toFixed(6)}\nLongitude (X): ${dd_lon.toFixed(6)}`;
+}
+
+function convertDdToDms() {
+  const dd_lat = parseFloat(document.getElementById('dd_lat').value);
+  const dd_lon = parseFloat(document.getElementById('dd_lon').value);
+
+  if (Number.isNaN(dd_lat) || !inLatRange(dd_lat)) { alert('Enter a valid latitude in DD (−90..90).'); return; }
+  if (Number.isNaN(dd_lon) || !inLonRange(dd_lon)) { alert('Enter a valid longitude in DD (−180..180).'); return; }
+
+  const dms_lat = ddToDms(dd_lat, "lat");
+  const dms_lon = ddToDms(dd_lon, "lon");
+
+  document.getElementById('dms_result').value =
+    `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`;
+}
+</script>
+</body>
+</html>
