@@ -1,4 +1,5 @@
 // scripts for cordify
+console.log('app.js loaded');
 
 // ---- Robust DMS string parser ----
 // Supports: symbols/spaces, , as decimal, signed degrees, leading/trailing NSEW,
