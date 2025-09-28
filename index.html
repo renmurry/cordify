@@ -6,6 +6,9 @@
 
   <link rel="stylesheet" href="./assets/css/styles.css">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4a90e2">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
 <div class="container">
@@ -77,4 +80,17 @@
 
 <script src="./assets/js/app.js" defer></script>
 </body>
+</body>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(function(registration) {
+          // Registration successful
+        }, function(err) {
+          // Registration failed
+        });
+    });
+  }
+</script>
 </html>
