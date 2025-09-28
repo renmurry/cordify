@@ -12,10 +12,15 @@
 </head>
 <body>
 <div class="container">
+
+  <nav style="margin-bottom: 1em;">
+    <button id="tab-convert" class="tab-btn" type="button">Convert</button>
+    <button id="tab-history" class="tab-btn" type="button">History</button>
+  </nav>
   <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
 
-  <!-- DMS to DD -->
-  <div>
+  <!-- Conversion Tab -->
+  <div id="convert-tab">
     <h4>DMS to DD</h4>
 
     <!-- Single-string DMS inputs -->
@@ -74,11 +79,35 @@
     </div>
     <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
     <textarea class="result" id="dms_result" readonly></textarea>
-  </div>
+
+    <!-- History Tab -->
+    <div id="history-tab" style="display:none">
+      <h4>Conversion History</h4>
+      <div style="margin-bottom:0.5em">
+        <button id="clear-history-btn" type="button">Clear History</button>
+        <button id="export-history-xlsx" type="button">Export All (Excel)</button>
+        <button id="export-history-csv" type="button">Export All (CSV)</button>
+      </div>
+      <table id="history-table" border="1" style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Type</th>
+            <th>Input</th>
+            <th>Result</th>
+            <th>Date</th>
+            <th>Export</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="history-empty" style="margin-top:1em;color:#888;display:none">No history yet.</div>
+    </div>
 </div>
 
 
 <script src="./assets/js/app.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js"></script>
 </body>
 </body>
 <script>
