@@ -35,7 +35,6 @@
       <span class="small">Press <b>Enter</b> in inputs to convert</span>
     </div>
 
-    <!-- Single-string DMS inputs -->
     <div class="row">
       <label>Latitude DMS:
         <input id="dms_lat_string" type="text" placeholder='e.g. 12°34&#39;56.7&quot; N or -12 34 56.7' aria-label="Latitude DMS">
@@ -50,7 +49,6 @@
 
     <hr style="margin-top:12px; margin-bottom:12px;">
 
-    <!-- Separate D/M/S inputs -->
     <div class="row">
       <b>Latitude (Y):</b>
       <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg" aria-label="Lat degrees" ></label>
@@ -113,6 +111,68 @@
       <textarea class="result" id="dms_result" readonly></textarea>
       <button type="button" class="copy-btn" id="copy-dms">Copy</button>
     </div>
+
+    <!-- ================= Batch Convert (Excel/CSV) ================= -->
+    <hr>
+    <h4>Batch Convert (Excel / CSV)</h4>
+    <div class="small" style="margin-bottom:6px;">
+      Upload a file, pick columns, choose direction, then export.
+    </div>
+
+    <div class="row">
+      <input type="file" id="batch-file" accept=".xlsx,.xls,.csv" />
+      <label class="inline">Direction:
+        <select id="batch-direction">
+          <option value="DD2DMS">DD → DMS</option>
+          <option value="DMS2DD">DMS → DD</option>
+        </select>
+      </label>
+      <label class="inline">Input format:
+        <select id="batch-format">
+          <option value="dd-columns">DD columns</option>
+          <option value="dms-strings">DMS string columns</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="batch-mapping" class="row" style="display:none;">
+      <div id="map-dd" class="inline">
+        <span class="small">DD columns:</span>
+        <label>Lat:
+          <select id="map-dd-lat"></select>
+        </label>
+        <label>Lon:
+          <select id="map-dd-lon"></select>
+        </label>
+      </div>
+
+      <div id="map-dms" class="inline" style="display:none;">
+        <span class="small">DMS string columns:</span>
+        <label>Lat DMS:
+          <select id="map-dms-lat"></select>
+        </label>
+        <label>Lon DMS:
+          <select id="map-dms-lon"></select>
+        </label>
+      </div>
+    </div>
+
+    <div class="inline" id="batch-actions" style="display:none; margin:6px 0 10px;">
+      <button class="btn-primary" id="batch-run" type="button">Run Batch</button>
+      <button id="batch-download-xlsx" type="button">Download XLSX</button>
+      <button id="batch-download-csv" type="button">Download CSV</button>
+      <span class="small" id="batch-status"></span>
+    </div>
+
+    <div id="batch-preview-wrap" style="display:none;">
+      <div class="small" style="margin:6px 0;">Preview (first 20 rows)</div>
+      <table class="table" id="batch-preview" style="width:100%;">
+        <thead><tr id="batch-head"></tr></thead>
+        <tbody id="batch-body"></tbody>
+      </table>
+    </div>
+    <!-- ================= End Batch ================= -->
+
   </div>
   <!-- /#convert-tab -->
 
@@ -135,9 +195,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
-<script src="./assets/js/app.js?v=4" defer></script>
+<script src="./assets/js/app.js?v=5" defer></script>
 
-<!-- service worker is fine; comment during dev if caching annoys you -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
