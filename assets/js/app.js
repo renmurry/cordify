@@ -1,221 +1,157 @@
 // scripts for cordify
 console.log('app.js loaded');
 
-// Register Service Worker (handles GitHub Pages subpath)
-(() => {
-  if ('serviceWorker' in navigator) {
-    const swUrl = 'service-worker.js';
-    const scope = './';
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register(swUrl, { scope }).catch(() => {/* no-op */});
-    });
-  }
-})();
-
-// --- Cordify App: true render-swap tabs (Convert | History) ---
+// --- Cordify App: Conversion History, Export, and UI Tabs ---
 (function() {
-  const DEFAULT_META = { crs: 'EPSG:4326', precision: 6 };
-  let activeTab = 'convert';
-  let panel;
-  let convertMode = sessionStorage.getItem('convert_mode') || 'DMS→DD';
-  let historyFilter = sessionStorage.getItem('history_filter') || 'all';
+  // --- Constants ---
+  const HISTORY_KEY = 'cordify_history';
+  const MAX_HISTORY = 1000; // limit for localStorage
 
+  // --- Tab Navigation ---
   document.addEventListener('DOMContentLoaded', () => {
-    panel = document.getElementById('panel');
-    document.getElementById('tab-convert')?.addEventListener('click', () => { activeTab='convert'; render(); });
-    document.getElementById('tab-history')?.addEventListener('click', () => { activeTab='history'; render(); });
-    render();
+    const convertTab = document.getElementById('convert-tab');
+    const historyTab = document.getElementById('history-tab');
+    const btnConvert = document.getElementById('tab-convert');
+    const btnHistory = document.getElementById('tab-history');
+    if (btnConvert && btnHistory && convertTab && historyTab) {
+      btnConvert.onclick = () => { convertTab.style.display = ''; historyTab.style.display = 'none'; };
+      btnHistory.onclick = () => { convertTab.style.display = 'none'; historyTab.style.display = ''; renderHistoryTable(); };
+    }
+    // Initial tab
+    if (convertTab) convertTab.style.display = '';
+    if (historyTab) historyTab.style.display = 'none';
   });
 
-  function render(){
-    if (!panel) return;
-    panel.replaceChildren(); // unmount everything
-    if (activeTab==='convert') renderConvert();
-    else renderHistory(window.historyStore?.getAll() || []);
+  // --- History Storage ---
+  function getHistory() {
+    try {
+      const arr = JSON.parse(localStorage.getItem(HISTORY_KEY));
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  function saveHistory(arr) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(-MAX_HISTORY)));
+    } catch (e) { /* handle quota exceeded */ }
+  }
+  function addHistory(entry) {
+    const arr = getHistory();
+    arr.push(entry);
+    saveHistory(arr);
+  }
+  function clearHistory() {
+    localStorage.removeItem(HISTORY_KEY);
   }
 
-  // Helpers
-  function el(tag, attrs={}, children=[]) {
-    const node = document.createElement(tag);
-    for (const k in attrs) {
-      if (k === 'class') node.className = attrs[k];
-      else if (k === 'style' && typeof attrs[k] === 'object') Object.assign(node.style, attrs[k]);
-      else if (k.startsWith('on') && typeof attrs[k] === 'function') node.addEventListener(k.slice(2), attrs[k]);
-      else if (attrs[k] !== undefined && attrs[k] !== null) node.setAttribute(k, attrs[k]);
-    }
-    (Array.isArray(children)? children: [children]).forEach(c => {
-      if (c === null || c === undefined) return;
-      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-    });
-    return node;
-  }
-  function opt(v,l){ return el('option', { value: v }, l ?? v); }
-  function td(n){ return el('td', {}, n); }
-  function trHead(cols){ return el('tr', {}, cols.map(c=>el('th',{},c))); }
-  function code(text){ return el('code', { title: text }, text); }
-  function setResult(id, text){
-    const elmt = document.getElementById(id);
-    if (!elmt) return;
-    if ('value' in elmt) elmt.value = text; else elmt.textContent = text;
-  }
-  function getResultText(id){
-    const elmt = document.getElementById(id);
-    if (!elmt) return '';
-    return 'value' in elmt ? (elmt.value || '') : (elmt.textContent || '');
-  }
-
-  // Temporary test hook
-  window.__assertNoInputsOnHistory = () => (activeTab==='history') && document.querySelectorAll('#panel input,#panel select,#panel textarea').length===0;
-
-  // --- Render Convert ---
-  function renderConvert(){
-    // read prefill from sessionStorage if any
-    let prefill = null;
-    try { prefill = JSON.parse(sessionStorage.getItem('convert_prefill')); } catch {}
-    sessionStorage.removeItem('convert_prefill');
-
-    // Direction select
-    const dirRow = el('div',{class:'row'},[
-      el('label',{},['Direction: ', el('select',{id:'conv_dir',onchange:(e)=>{ convertMode=e.target.value; sessionStorage.setItem('convert_mode', convertMode); render(); }},[opt('DMS→DD'),opt('DD→DMS')])])
-    ]);
-    // set value after mount
-    setTimeout(()=>{ const s=document.getElementById('conv_dir'); if (s) s.value=convertMode; },0);
-
-    const row1 = el('div',{class:'row'},[
-      el('label',{},['Latitude DMS: ', el('input',{id:'dms_lat_string',type:'text',placeholder:'e.g. 12°34\'56.7\" N or -12 34 56.7'})])
-    ]);
-    const row2 = el('div',{class:'row'},[
-      el('label',{},['Longitude DMS: ', el('input',{id:'dms_lon_string',type:'text',placeholder:'e.g. 77°35\'12\" E or -77 35 12'})])
-    ]);
-    const hr = el('hr',{style:{marginTop:'15px',marginBottom:'15px'}});
-    const dmsLat = el('div',{class:'row'},[
-      el('b',{},'Latitude (Y):'),
-      el('label',{},['° ', el('input',{id:'dms_lat_deg',type:'number',step:'1',placeholder:'deg',min:'0',max:'90'})]),
-      el('label',{},['\' ', el('input',{id:'dms_lat_min',type:'number',step:'1',placeholder:'min',min:'0',max:'59'})]),
-      el('label',{},['" ', el('input',{id:'dms_lat_sec',type:'number',step:'any',placeholder:'sec',min:'0',max:'59.9999'})]),
-      el('select',{id:'dms_lat_dir'},[opt('N'),opt('S')])
-    ]);
-    const dmsLon = el('div',{class:'row'},[
-      el('b',{},'Longitude (X):'),
-      el('label',{},['° ', el('input',{id:'dms_lon_deg',type:'number',step:'1',placeholder:'deg',min:'0',max:'180'})]),
-      el('label',{},['\' ', el('input',{id:'dms_lon_min',type:'number',step:'1',placeholder:'min',min:'0',max:'59'})]),
-      el('label',{},['" ', el('input',{id:'dms_lon_sec',type:'number',step:'any',placeholder:'sec',min:'0',max:'59.9999'})]),
-      el('select',{id:'dms_lon_dir'},[opt('E'),opt('W')])
-    ]);
-    const btnConv = el('button',{type:'button',onclick:()=>convertDmsToDd()},'Convert to DD');
-    const resultRow = el('div',{class:'row',style:{alignItems:'flex-start'}},[
-      el('pre',{class:'result',id:'dd_result'}),
-      el('button',{id:'copy-dd-btn',type:'button',title:'Copy results',onclick:async()=>{
-        const txt = getResultText('dd_result'); if (!txt) return;
-        try { await navigator.clipboard.writeText(txt); } catch {}
-      }},'Copy')
-    ]);
-
-    const hr2 = el('hr');
-    const h4b = el('h4',{},'DD to DMS');
-    const ddLat = el('div',{class:'row'},[
-      el('b',{},'Latitude (Y):'),
-      el('label',{},['DD ', el('input',{id:'dd_lat',type:'number',step:'any',placeholder:'e.g. 12.58242',min:'-90',max:'90'})])
-    ]);
-    const ddLon = el('div',{class:'row'},[
-      el('b',{},'Longitude (X):'),
-      el('label',{},['DD ', el('input',{id:'dd_lon',type:'number',step:'any',placeholder:'e.g. 77.58667',min:'-180',max:'180'})])
-    ]);
-    const btnConv2 = el('button',{type:'button',onclick:()=>convertDdToDms()},'Convert to DMS');
-    const resultRow2 = el('div',{class:'row',style:{alignItems:'flex-start'}},[
-      el('pre',{class:'result',id:'dms_result'}),
-      el('button',{id:'copy-dms-btn',type:'button',title:'Copy results',onclick:async()=>{
-        const txt = getResultText('dms_result'); if (!txt) return;
-        try { await navigator.clipboard.writeText(txt); } catch {}
-      }},'Copy')
-    ]);
-
-    // Prefill after rerun request
-    if (prefill && prefill.type) {
-      if (prefill.type==='DD→DMS') {
-        const mLat = /Lat:\s*([-+]?\d+(?:\.\d+)?)/.exec(prefill.input || '');
-        const mLon = /Lon:\s*([-+]?\d+(?:\.\d+)?)/.exec(prefill.input || '');
-        if (mLat) ddLat.querySelector('input#dd_lat').value = mLat[1];
-        if (mLon) ddLon.querySelector('input#dd_lon').value = mLon[1];
-      } else if (prefill.type==='DMS→DD') {
-        const lines = (prefill.input || '').split(/\n/);
-        const latLine = lines.find(l=>/^Lat:/i.test(l)) || '';
-        const lonLine = lines.find(l=>/^Lon:/i.test(l)) || '';
-        const latStr = latLine.replace(/^Lat:\s*/, '');
-        const lonStr = lonLine.replace(/^Lon:\s*/, '');
-        row1.querySelector('#dms_lat_string').value = latStr;
-        row2.querySelector('#dms_lon_string').value = lonStr;
-      }
-    }
-
-    // Render depending on convertMode
-    panel.appendChild(dirRow);
-    if (convertMode==='DMS→DD') {
-      panel.appendChild(el('h4',{},'DMS to DD'));
-      panel.appendChild(row1);
-      panel.appendChild(row2);
-      panel.appendChild(hr);
-      panel.appendChild(dmsLat);
-      panel.appendChild(dmsLon);
-      panel.appendChild(btnConv);
-      panel.appendChild(resultRow);
-    } else {
-      panel.appendChild(h4b);
-      panel.appendChild(ddLat);
-      panel.appendChild(ddLon);
-      panel.appendChild(btnConv2);
-      panel.appendChild(resultRow2);
-    }
-  }
-
-  // --- Render History ---
-  function renderHistory(items){
-    const wrap = el('div',{});
-    const controls = el('div',{class:'row',style:{justifyContent:'space-between'}},[
-      el('div',{},[
-        el('span',{},'Filter: '),
-        el('button',{type:'button',onclick:()=>{ historyFilter='all'; sessionStorage.setItem('history_filter','all'); render(); }, 'aria-pressed': String(historyFilter==='all')},'All'),
-        el('button',{type:'button',onclick:()=>{ historyFilter='DMS→DD'; sessionStorage.setItem('history_filter','DMS→DD'); render(); }, 'aria-pressed': String(historyFilter==='DMS→DD')},'DMS→DD'),
-        el('button',{type:'button',onclick:()=>{ historyFilter='DD→DMS'; sessionStorage.setItem('history_filter','DD→DMS'); render(); }, 'aria-pressed': String(historyFilter==='DD→DMS')},'DD→DMS')
-      ]),
-      el('div',{},[
-        el('button',{id:'clear-history-btn',type:'button',onclick:()=>{ if (confirm('Clear all?')) { window.historyStore.clear(); render(); } }},'Clear All')
-      ])
-    ]);
-    const data = (historyFilter==='all'? items : (window.historyStore.filterByType(historyFilter)) );
-
-    if (!data.length) {
-      wrap.appendChild(controls);
-      wrap.appendChild(el('div',{id:'history-empty',style:{marginTop:'1em',color:'#888'}},'No history yet.'));
-      panel.appendChild(wrap);
+  // --- UI: Render History Table ---
+  function renderHistoryTable() {
+    const table = document.getElementById('history-table');
+    const tbody = table ? table.querySelector('tbody') : null;
+    const emptyMsg = document.getElementById('history-empty');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const arr = getHistory();
+    if (!arr.length) {
+      if (emptyMsg) emptyMsg.style.display = '';
+      table.style.display = 'none';
       return;
     }
-
-    const table = el('table',{id:'history-table',border:'1',style:{width:'100%','borderCollapse':'collapse'}},[
-      el('thead',{},[trHead(['Time','Type','Input','Output','Actions'])]),
-      el('tbody',{})
-    ]);
-    const tbody = table.querySelector('tbody');
-
-    data.forEach(rec => {
-      const tr = el('tr',{},[
-        td(new Date(rec.ts || Date.now()).toLocaleString()),
-        td(rec.type || ''),
-        td(code(rec.input || '')),
-        td(code(rec.output || '')),
-        td(el('div',{},[
-          el('button',{type:'button',onclick:async()=>{ try{ await navigator.clipboard.writeText(rec.input||''); }catch{} }},'Copy In'),
-          el('button',{type:'button',onclick:async()=>{ try{ await navigator.clipboard.writeText(rec.output||''); }catch{} }},'Copy Out'),
-          el('button',{type:'button',onclick:()=>{ hydrateConverterFromHistory(rec); activeTab='convert'; render(); }},'Re-run'),
-          el('button',{type:'button',onclick:()=>{ window.historyStore.remove(rec.id); render(); }},'Delete')
-        ]))
-      ]);
+    if (emptyMsg) emptyMsg.style.display = 'none';
+    table.style.display = '';
+    arr.forEach((item, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i+1}</td>
+        <td>${item.type || ''}</td>
+        <td>${escapeHtml(item.input)}</td>
+        <td>${escapeHtml(item.result)}</td>
+        <td>${item.date ? new Date(item.date).toLocaleString() : ''}</td>
+        <td>
+          <button type="button" class="export-row-xlsx" data-idx="${i}">Excel</button>
+          <button type="button" class="export-row-csv" data-idx="${i}">CSV</button>
+        </td>
+      `;
       tbody.appendChild(tr);
     });
-    wrap.appendChild(controls);
-    wrap.appendChild(table);
-    panel.appendChild(wrap);
   }
+
+  // --- Escape HTML for safe rendering ---
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+  }
+
+  // --- Clear History Button ---
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('clear-history-btn');
+    if (btn) {
+      btn.onclick = () => {
+        if (confirm('Clear all conversion history?')) {
+          clearHistory();
+          renderHistoryTable();
+        }
+      };
+    }
+  });
+
+  // --- Export All (Excel/CSV) ---
+  document.addEventListener('DOMContentLoaded', () => {
+    const btnXlsx = document.getElementById('export-history-xlsx');
+    const btnCsv = document.getElementById('export-history-csv');
+    if (btnXlsx) btnXlsx.onclick = () => exportHistory('xlsx');
+    if (btnCsv) btnCsv.onclick = () => exportHistory('csv');
+    // Row export
+    document.getElementById('history-table')?.addEventListener('click', e => {
+      if (e.target.classList.contains('export-row-xlsx')) exportHistory('xlsx', parseInt(e.target.dataset.idx));
+      if (e.target.classList.contains('export-row-csv')) exportHistory('csv', parseInt(e.target.dataset.idx));
+    });
+  });
+
+  // --- Export Logic ---
+  function exportHistory(type, rowIdx) {
+    const arr = getHistory();
+    let data = arr;
+    if (typeof rowIdx === 'number' && arr[rowIdx]) data = [arr[rowIdx]];
+    if (!data.length) return;
+    // Format for export
+    const exportArr = data.map((item, i) => ({
+      '#': rowIdx !== undefined ? (rowIdx+1) : (i+1),
+      'Type': item.type || '',
+      'Input': item.input,
+      'Result': item.result,
+      'Date': item.date ? new Date(item.date).toLocaleString() : ''
+    }));
+    if (type === 'xlsx') {
+      try {
+        const ws = XLSX.utils.json_to_sheet(exportArr);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'History');
+        XLSX.writeFile(wb, rowIdx !== undefined ? `cordify_conversion_${rowIdx+1}.xlsx` : 'cordify_history.xlsx');
+      } catch (e) { alert('Excel export failed.'); }
+    } else if (type === 'csv') {
+      try {
+        const csv = toCsv(exportArr);
+        const blob = new Blob([csv], {type:'text/csv'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = rowIdx !== undefined ? `cordify_conversion_${rowIdx+1}.csv` : 'cordify_history.csv';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+      } catch (e) { alert('CSV export failed.'); }
+    }
+  }
+  // --- CSV helper ---
+  function toCsv(arr) {
+    if (!arr.length) return '';
+    const keys = Object.keys(arr[0]);
+    const esc = v => '"'+String(v).replace(/"/g,'""')+'"';
+    return keys.join(',') + '\n' + arr.map(row => keys.map(k => esc(row[k])).join(',')).join('\n');
+  }
+
+  // --- Hook into conversions to store history ---
+  window._cordify_addHistory = addHistory;
+  window._cordify_renderHistory = renderHistoryTable;
 })();
 
 // ...existing code...
@@ -292,7 +228,7 @@ function inLonRange(v) { return v >= -180 && v <= 180; }
 
 // Store prefill in sessionStorage; renderConvert reads it
 function hydrateConverterFromHistory(rec) {
-  try { sessionStorage.setItem('convert_prefill', JSON.stringify(rec)); } catch {}
+  // Not used in original implementation
 }
 
 function convertDmsToDd() {
@@ -324,19 +260,55 @@ function convertDmsToDd() {
     alert('Invalid Longitude.'); return;
   }
 
-  const precision = DEFAULT_META.precision;
-  const ddText = `Latitude (Y): ${dd_lat.toFixed(precision)}\nLongitude (X): ${dd_lon.toFixed(precision)}`;
-  setResult('dd_result', ddText);
+  // Build input and result summaries, update UI, and store history
 
-  const inputSummary = latStr
-    ? `Lat: ${latStr}\n`
-    : `Lat: ${document.getElementById('dms_lat_deg')?.value}° ${document.getElementById('dms_lat_min')?.value}' ${document.getElementById('dms_lat_sec')?.value}" ${latDir}` + '\n';
-  const inputSummary2 = lonStr
-    ? `Lon: ${lonStr}`
-    : `Lon: ${document.getElementById('dms_lon_deg')?.value}° ${document.getElementById('dms_lon_min')?.value}' ${document.getElementById('dms_lon_sec')?.value}" ${lonDir}`;
+  let inputSummary = '', resultSummary = '';
 
-  const resultSummary = `Lat: ${dd_lat.toFixed(precision)}\nLon: ${dd_lon.toFixed(precision)}`;
-  window.historyStore?.add({ type: 'DMS→DD', input: inputSummary + inputSummary2, output: resultSummary, meta: { ...DEFAULT_META } });
+    if (latStr) {
+      dd_lat = parseDmsString(latStr);
+      if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude DMS.'); return; }
+      inputSummary += `Lat: ${latStr}\n`;
+    } else {
+      dd_lat = dmsToDd(
+        parseFloat(document.getElementById('dms_lat_deg').value) || 0,
+        parseFloat(document.getElementById('dms_lat_min').value) || 0,
+        parseFloat(document.getElementById('dms_lat_sec').value) || 0,
+        document.getElementById('dms_lat_dir').value
+      );
+      if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude D/M/S.'); return; }
+      inputSummary += `Lat: ${document.getElementById('dms_lat_deg').value}° ${document.getElementById('dms_lat_min').value}' ${document.getElementById('dms_lat_sec').value}" ${document.getElementById('dms_lat_dir').value}\n`;
+    }
+
+    if (lonStr) {
+      dd_lon = parseDmsString(lonStr);
+      if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude DMS.'); return; }
+      inputSummary += `Lon: ${lonStr}`;
+    } else {
+      dd_lon = dmsToDd(
+        parseFloat(document.getElementById('dms_lon_deg').value) || 0,
+        parseFloat(document.getElementById('dms_lon_min').value) || 0,
+        parseFloat(document.getElementById('dms_lon_sec').value) || 0,
+        document.getElementById('dms_lon_dir').value
+      );
+      if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude D/M/S.'); return; }
+      inputSummary += `Lon: ${document.getElementById('dms_lon_deg').value}° ${document.getElementById('dms_lon_min').value}' ${document.getElementById('dms_lon_sec').value}" ${document.getElementById('dms_lon_dir').value}`;
+    }
+
+    resultSummary = `Lat: ${dd_lat.toFixed(6)}\nLon: ${dd_lon.toFixed(6)}`;
+    document.getElementById('dd_result').value =
+      `Latitude (Y): ${dd_lat.toFixed(6)}\nLongitude (X): ${dd_lon.toFixed(6)}`;
+
+    // Store in history
+    window._cordify_addHistory && window._cordify_addHistory({
+      type: 'DMS→DD',
+      input: inputSummary,
+      result: resultSummary,
+      date: Date.now()
+    });
+    // Refresh history if visible
+    if (document.getElementById('history-tab')?.style.display !== 'none') {
+      window._cordify_renderHistory && window._cordify_renderHistory();
+    }
 }
 
 function convertDdToDms() {
@@ -352,8 +324,18 @@ function convertDdToDms() {
 
   inputSummary = `Lat: ${dd_lat}\nLon: ${dd_lon}`;
   resultSummary = `Lat: ${dms_lat}\nLon: ${dms_lon}`;
-  setResult('dms_result', `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`);
+  document.getElementById('dms_result').value = `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`;
 
   // Store in history
-  window.historyStore?.add({ type: 'DD→DMS', input: inputSummary, output: resultSummary, meta: { ...DEFAULT_META } });
+  // Store in history
+  window._cordify_addHistory && window._cordify_addHistory({
+    type: 'DD→DMS',
+    input: inputSummary,
+    result: resultSummary,
+    date: Date.now()
+  });
+  // Refresh history if visible
+  if (document.getElementById('history-tab')?.style.display !== 'none') {
+    window._cordify_renderHistory && window._cordify_renderHistory();
+  }
 }
