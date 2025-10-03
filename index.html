@@ -95,20 +95,27 @@
     <!-- History Tab -->
     <div id="history-tab" style="display:none">
       <h4>Conversion History</h4>
-      <div style="margin-bottom:0.5em">
-        <button id="clear-history-btn" type="button">Clear History</button>
-        <button id="export-history-xlsx" type="button">Export All (Excel)</button>
-        <button id="export-history-csv" type="button">Export All (CSV)</button>
+      <div class="row" style="justify-content:space-between">
+        <div>
+          <label for="history-filter">Filter:</label>
+          <select id="history-filter" aria-label="Filter history by type">
+            <option value="all">All</option>
+            <option value="DMS→DD">DMS→DD</option>
+            <option value="DD→DMS">DD→DMS</option>
+          </select>
+        </div>
+        <div>
+          <button id="clear-history-btn" type="button">Clear All</button>
+        </div>
       </div>
       <table id="history-table" border="1" style="width:100%;border-collapse:collapse">
         <thead>
           <tr>
-            <th>#</th>
+            <th>Time</th>
             <th>Type</th>
             <th>Input</th>
-            <th>Result</th>
-            <th>Date</th>
-            <th>Export</th>
+            <th>Output</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -119,6 +126,7 @@
 
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
+<script src="./assets/js/historyStore.js" defer></script>
 <script src="./assets/js/app.js" defer></script>
 </body>
 </html>

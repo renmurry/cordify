@@ -12,11 +12,10 @@ console.log('app.js loaded');
   }
 })();
 
-// --- Cordify App: Conversion History, Export, and UI Tabs ---
+// --- Cordify App: Converter, History (read-only), and UI Tabs ---
 (function() {
   // --- Constants ---
-  const HISTORY_KEY = 'cordify_history';
-  const MAX_HISTORY = 1000; // limit for localStorage
+  const DEFAULT_META = { crs: 'EPSG:4326', precision: 6 };
 
   // --- Tab Navigation ---
   document.addEventListener('DOMContentLoaded', () => {
@@ -26,66 +25,43 @@ console.log('app.js loaded');
     const btnHistory = document.getElementById('tab-history');
     if (btnConvert && btnHistory && convertTab && historyTab) {
       btnConvert.onclick = () => { convertTab.style.display = ''; historyTab.style.display = 'none'; };
-      btnHistory.onclick = () => { convertTab.style.display = 'none'; historyTab.style.display = ''; renderHistoryTable(); };
+      btnHistory.onclick = () => { convertTab.style.display = 'none'; historyTab.style.display = ''; renderHistoryPanel(); };
     }
     // Initial tab
     if (convertTab) convertTab.style.display = '';
     if (historyTab) historyTab.style.display = 'none';
   });
 
-  // --- History Storage ---
-  function getHistory() {
-    try {
-      const arr = JSON.parse(localStorage.getItem(HISTORY_KEY));
-      return Array.isArray(arr) ? arr : [];
-    } catch (e) { return []; }
-  }
-  function saveHistory(arr) {
-    try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(-MAX_HISTORY)));
-    } catch (e) { /* handle quota exceeded */ }
-  }
-  function addHistory(entry) {
-    const arr = getHistory();
-    arr.push(entry);
-    saveHistory(arr);
-  }
-  function clearHistory() {
-    localStorage.removeItem(HISTORY_KEY);
-  }
-
-  // --- UI: Render History Table ---
-  function renderHistoryTable() {
+  // --- UI: Render History Panel (read-only) ---
+  function renderHistoryPanel() {
     const table = document.getElementById('history-table');
     const tbody = table ? table.querySelector('tbody') : null;
     const emptyMsg = document.getElementById('history-empty');
-    const exportAllXlsx = document.getElementById('export-history-xlsx');
-    const exportAllCsv = document.getElementById('export-history-csv');
+    const filterSel = document.getElementById('history-filter');
     if (!tbody) return;
     tbody.innerHTML = '';
-    const arr = getHistory();
+    const type = filterSel?.value || 'all';
+    const arr = (window.historyStore?.filterByType(type)) || [];
     if (!arr.length) {
       if (emptyMsg) emptyMsg.style.display = '';
       table.style.display = 'none';
-      if (exportAllXlsx) exportAllXlsx.disabled = true;
-      if (exportAllCsv) exportAllCsv.disabled = true;
       return;
     }
     if (emptyMsg) emptyMsg.style.display = 'none';
     table.style.display = '';
-    if (exportAllXlsx) exportAllXlsx.disabled = false;
-    if (exportAllCsv) exportAllCsv.disabled = false;
-    arr.forEach((item, i) => {
+    arr.forEach((item) => {
       const tr = document.createElement('tr');
+      const time = new Date(item.ts || item.date || Date.now()).toLocaleString();
       tr.innerHTML = `
-        <td>${i+1}</td>
+        <td>${escapeHtml(time)}</td>
         <td>${item.type || ''}</td>
-        <td>${escapeHtml(item.input)}</td>
-        <td>${escapeHtml(item.result)}</td>
-        <td>${item.date ? new Date(item.date).toLocaleString() : ''}</td>
+        <td><pre style="white-space:pre-wrap;margin:0">${escapeHtml(item.input)}</pre></td>
+        <td><pre style="white-space:pre-wrap;margin:0">${escapeHtml(item.output || item.result || '')}</pre></td>
         <td>
-          <button type="button" class="export-row-xlsx" data-idx="${i}">Excel</button>
-          <button type="button" class="export-row-csv" data-idx="${i}">CSV</button>
+          <button type="button" class="h-copy-in" data-id="${item.id}">Copy In</button>
+          <button type="button" class="h-copy-out" data-id="${item.id}">Copy Out</button>
+          <button type="button" class="h-rerun" data-id="${item.id}">Re-run</button>
+          <button type="button" class="h-del" data-id="${item.id}">Delete</button>
         </td>
       `;
       tbody.appendChild(tr);
@@ -123,65 +99,35 @@ console.log('app.js loaded');
     });
   });
 
-  // --- Export All (Excel/CSV) ---
+  // --- History actions and filter ---
   document.addEventListener('DOMContentLoaded', () => {
-    const btnXlsx = document.getElementById('export-history-xlsx');
-    const btnCsv = document.getElementById('export-history-csv');
-    if (btnXlsx) btnXlsx.onclick = () => exportHistory('xlsx');
-    if (btnCsv) btnCsv.onclick = () => exportHistory('csv');
-    // Row export
-    document.getElementById('history-table')?.addEventListener('click', e => {
-      if (e.target.classList.contains('export-row-xlsx')) exportHistory('xlsx', parseInt(e.target.dataset.idx));
-      if (e.target.classList.contains('export-row-csv')) exportHistory('csv', parseInt(e.target.dataset.idx));
+    document.getElementById('history-filter')?.addEventListener('change', () => renderHistoryPanel());
+    document.getElementById('history-table')?.addEventListener('click', async (e) => {
+      const id = e.target.dataset?.id;
+      if (!id) return;
+      if (e.target.classList.contains('h-copy-in')) {
+        const rec = window.historyStore?.getById(id); if (!rec) return;
+        await navigator.clipboard.writeText(rec.input || '');
+      } else if (e.target.classList.contains('h-copy-out')) {
+        const rec = window.historyStore?.getById(id); if (!rec) return;
+        await navigator.clipboard.writeText(rec.output || rec.result || '');
+      } else if (e.target.classList.contains('h-rerun')) {
+        const rec = window.historyStore?.getById(id); if (!rec) return;
+        hydrateConverterFromHistory(rec);
+        // switch to converter tab
+        document.getElementById('tab-convert')?.click();
+      } else if (e.target.classList.contains('h-del')) {
+        window.historyStore?.remove(id);
+        renderHistoryPanel();
+      }
     });
   });
 
-  // --- Export Logic ---
-  function exportHistory(type, rowIdx) {
-    const arr = getHistory();
-    let data = arr;
-    if (typeof rowIdx === 'number' && arr[rowIdx]) data = [arr[rowIdx]];
-    if (!data.length) return;
-    // Format for export
-    const exportArr = data.map((item, i) => ({
-      '#': rowIdx !== undefined ? (rowIdx+1) : (i+1),
-      'Type': item.type || '',
-      'Input': item.input,
-      'Result': item.result,
-      'Date': item.date ? new Date(item.date).toLocaleString() : ''
-    }));
-    if (type === 'xlsx') {
-      try {
-        const ws = XLSX.utils.json_to_sheet(exportArr);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'History');
-        XLSX.writeFile(wb, rowIdx !== undefined ? `cordify_conversion_${rowIdx+1}.xlsx` : 'cordify_history.xlsx');
-      } catch (e) { alert('Excel export failed.'); }
-    } else if (type === 'csv') {
-      try {
-        const csv = toCsv(exportArr);
-        const blob = new Blob([csv], {type:'text/csv'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = rowIdx !== undefined ? `cordify_conversion_${rowIdx+1}.csv` : 'cordify_history.csv';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-      } catch (e) { alert('CSV export failed.'); }
-    }
-  }
-  // --- CSV helper ---
-  function toCsv(arr) {
-    if (!arr.length) return '';
-    const keys = Object.keys(arr[0]);
-    const esc = v => '"'+String(v).replace(/"/g,'""')+'"';
-    return keys.join(',') + '\n' + arr.map(row => keys.map(k => esc(row[k])).join(',')).join('\n');
-  }
+  // (Export functionality removed per new read-only History requirements)
 
   // --- Hook into conversions to store history ---
-  window._cordify_addHistory = addHistory;
-  window._cordify_renderHistory = renderHistoryTable;
+  // expose render to refresh panel
+  window._cordify_renderHistory = renderHistoryPanel;
 })();
 
 // ...existing code...
@@ -256,6 +202,29 @@ function ddToDms(dd, latlon) {
 function inLatRange(v) { return v >= -90 && v <= 90; }
 function inLonRange(v) { return v >= -180 && v <= 180; }
 
+// Hydrate converter form based on saved history record
+function hydrateConverterFromHistory(rec) {
+  if (!rec || !rec.type) return;
+  if (rec.type === 'DD→DMS') {
+    // parse input like: "Lat: 12.34\nLon: 56.78"
+    const mLat = /Lat:\s*([-+]?\d+(?:\.\d+)?)/.exec(rec.input || '');
+    const mLon = /Lon:\s*([-+]?\d+(?:\.\d+)?)/.exec(rec.input || '');
+    if (mLat) document.getElementById('dd_lat').value = mLat[1];
+    if (mLon) document.getElementById('dd_lon').value = mLon[1];
+  } else if (rec.type === 'DMS→DD') {
+    // Attempt to repopulate the single-string inputs for convenience if present
+    const lines = (rec.input || '').split(/\n/);
+    const latLine = lines.find(l=>/^Lat:/i.test(l)) || '';
+    const lonLine = lines.find(l=>/^Lon:/i.test(l)) || '';
+    const latStr = latLine.replace(/^Lat:\s*/, '');
+    const lonStr = lonLine.replace(/^Lon:\s*/, '');
+    const latEl = document.getElementById('dms_lat_string');
+    const lonEl = document.getElementById('dms_lon_string');
+    if (latEl) latEl.value = latStr;
+    if (lonEl) lonEl.value = lonStr;
+  }
+}
+
 function convertDmsToDd() {
   const latStr = (document.getElementById('dms_lat_string')?.value || '').trim();
   const lonStr = (document.getElementById('dms_lon_string')?.value || '').trim();
@@ -285,7 +254,8 @@ function convertDmsToDd() {
     alert('Invalid Longitude.'); return;
   }
 
-  const ddText = `Latitude (Y): ${dd_lat.toFixed(6)}\nLongitude (X): ${dd_lon.toFixed(6)}`;
+  const precision = DEFAULT_META.precision;
+  const ddText = `Latitude (Y): ${dd_lat.toFixed(precision)}\nLongitude (X): ${dd_lon.toFixed(precision)}`;
   document.getElementById('dd_result').value = ddText;
 
   const inputSummary = latStr
@@ -295,17 +265,9 @@ function convertDmsToDd() {
     ? `Lon: ${lonStr}`
     : `Lon: ${document.getElementById('dms_lon_deg')?.value}° ${document.getElementById('dms_lon_min')?.value}' ${document.getElementById('dms_lon_sec')?.value}" ${lonDir}`;
 
-  const resultSummary = `Lat: ${dd_lat.toFixed(6)}\nLon: ${dd_lon.toFixed(6)}`;
-
-  window._cordify_addHistory && window._cordify_addHistory({
-    type: 'DMS→DD',
-    input: inputSummary + inputSummary2,
-    result: resultSummary,
-    date: Date.now()
-  });
-  if (document.getElementById('history-tab')?.style.display !== 'none') {
-    window._cordify_renderHistory && window._cordify_renderHistory();
-  }
+  const resultSummary = `Lat: ${dd_lat.toFixed(precision)}\nLon: ${dd_lon.toFixed(precision)}`;
+  window.historyStore?.add({ type: 'DMS→DD', input: inputSummary + inputSummary2, output: resultSummary, meta: { ...DEFAULT_META } });
+  if (document.getElementById('history-tab')?.style.display !== 'none') window._cordify_renderHistory && window._cordify_renderHistory();
 }
 
 function convertDdToDms() {
@@ -321,18 +283,9 @@ function convertDdToDms() {
 
   inputSummary = `Lat: ${dd_lat}\nLon: ${dd_lon}`;
   resultSummary = `Lat: ${dms_lat}\nLon: ${dms_lon}`;
-  document.getElementById('dms_result').value =
-    `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`;
+  document.getElementById('dms_result').value = `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`;
 
   // Store in history
-  window._cordify_addHistory && window._cordify_addHistory({
-    type: 'DD→DMS',
-    input: inputSummary,
-    result: resultSummary,
-    date: Date.now()
-  });
-  // Refresh history if visible
-  if (document.getElementById('history-tab')?.style.display !== 'none') {
-    window._cordify_renderHistory && window._cordify_renderHistory();
-  }
+  window.historyStore?.add({ type: 'DD→DMS', input: inputSummary, output: resultSummary, meta: { ...DEFAULT_META } });
+  if (document.getElementById('history-tab')?.style.display !== 'none') window._cordify_renderHistory && window._cordify_renderHistory();
 }

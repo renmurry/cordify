@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>History Store Tests</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <h1>History Store Tests</h1>
+  <pre id="out"></pre>
+  <script src="../assets/js/historyStore.js"></script>
+  <script>
+    (function(){
+      const log = (...a)=>{ document.getElementById('out').textContent += a.join(' ')+'\n'; };
+
+      function expect(name, cond){ log((cond?'PASS':'FAIL')+':', name); }
+
+      // Clear clean state
+      historyStore.clear();
+
+      // add up to more than cap
+      for (let i=0;i<205;i++) historyStore.add({ type: i%2? 'DMS→DD':'DD→DMS', input: 'in'+i, output:'out'+i, meta:{precision:6}});
+      const all = historyStore.getAll();
+      expect('cap at 200', all.length===200);
+
+      const first = all[0];
+      expect('has id and ts', !!first.id && typeof first.ts==='number');
+
+      // filter
+      const onlyA = historyStore.filterByType('DMS→DD');
+      expect('filter returns only matching', onlyA.every(r=>r.type==='DMS→DD'));
+
+      // getById
+      const got = historyStore.getById(first.id);
+      expect('getById returns same', got && got.id===first.id);
+
+      // remove
+      historyStore.remove(first.id);
+      expect('remove reduces count by 1', historyStore.getAll().length === all.length-1);
+
+      // clear
+      historyStore.clear();
+      expect('clear empties store', historyStore.getAll().length===0);
+    })();
+  </script>
+</body>
+</html>
