@@ -50,7 +50,7 @@ console.log('app.js loaded');
     const emptyMsg = document.getElementById('history-empty');
     if (!tbody) return;
     tbody.innerHTML = '';
-    const arr = getHistory();
+    const arr = getHistory().filter(item => item.type === 'DD→DMS'); // Filter for DD→DMS conversions only
     if (!arr.length) {
       if (emptyMsg) emptyMsg.style.display = '';
       table.style.display = 'none';
@@ -61,17 +61,11 @@ console.log('app.js loaded');
     arr.forEach((item, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${i+1}</td>
+        <td>${i + 1}</td>
         <td>${item.type || ''}</td>
         <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.input)}">${escapeHtml(item.input)}</pre></td>
         <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.result)}">${escapeHtml(item.result)}</pre></td>
         <td>${item.date ? new Date(item.date).toLocaleString() : ''}</td>
-        <td>
-          <button type="button" class="copy-in" data-idx="${i}">Copy In</button>
-          <button type="button" class="copy-out" data-idx="${i}">Copy Result</button>
-          <button type="button" class="export-row-xlsx" data-idx="${i}">Excel</button>
-          <button type="button" class="export-row-csv" data-idx="${i}">CSV</button>
-        </td>
       `;
       tbody.appendChild(tr);
     });
