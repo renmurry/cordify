@@ -2,7 +2,7 @@
 console.log("app.js loaded");
 
 /* --------------------------------------------------------------------------
-   Cordify: tabs + history-only view + robust storage
+   Cordify: tabs + history-only view + robust storage + batch I/O
 --------------------------------------------------------------------------- */
 (function () {
   const MAX_HISTORY = 1000;
@@ -35,7 +35,7 @@ console.log("app.js loaded");
   window._cordify_addHistory = addHistory;
   window._cordify_renderHistory = renderHistoryTable;
 
-  // ---------- tabs ----------
+  // ---------- tabs + ui ----------
   document.addEventListener("DOMContentLoaded", () => {
     const convertTab = document.getElementById("convert-tab");
     const historyTab = document.getElementById("history-tab");
@@ -46,7 +46,6 @@ console.log("app.js loaded");
       btnOn?.classList.add("is-active");
       btnOff?.classList.remove("is-active");
     }
-
     function enterHistoryOnly() {
       if (convertTab) convertTab.style.display = "none";
       if (historyTab) historyTab.style.display = "";
@@ -58,14 +57,11 @@ console.log("app.js loaded");
       if (historyTab) historyTab.style.display = "none";
       setActive(btnConvert, btnHistory);
     }
-
     btnConvert && (btnConvert.onclick = enterConversion);
     btnHistory && (btnHistory.onclick = enterHistoryOnly);
-
-    // default
     enterConversion();
 
-    // wire UI helpers
+    // single conversions
     document.getElementById("btn-dms2dd")?.addEventListener("click", convertDmsToDd);
     document.getElementById("btn-dd2dms")?.addEventListener("click", convertDdToDms);
     document.getElementById("btn-clear-dms")?.addEventListener("click", clearDmsInputs);
@@ -81,7 +77,7 @@ console.log("app.js loaded");
     dmsInputs.forEach(id => document.getElementById(id)?.addEventListener("keydown", e => { if (e.key === "Enter") convertDmsToDd(); }));
     ["dd_lat","dd_lon"].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => { if (e.key === "Enter") convertDdToDms(); }));
 
-    // restore precision & last inputs (session)
+    // precision persistence
     try {
       const pdd = localStorage.getItem("cordify_precision_dd");
       if (pdd) document.getElementById("precision-dd").value = pdd;
@@ -91,6 +87,7 @@ console.log("app.js loaded");
     document.getElementById("precision-dd")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dd", e.target.value));
     document.getElementById("precision-dms")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dms", e.target.value));
 
+    // remember inputs (session)
     try {
       const last = sessionStorage.getItem("cordify_last_inputs");
       if (last) {
@@ -100,8 +97,14 @@ console.log("app.js loaded");
         });
       }
     } catch {}
-
     document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
+
+    // -------- batch wiring --------
+    document.getElementById("batch-file")?.addEventListener("change", handleBatchFile);
+    document.getElementById("batch-format")?.addEventListener("change", onBatchFormatChange);
+    document.getElementById("batch-run")?.addEventListener("click", runBatch);
+    document.getElementById("batch-download-xlsx")?.addEventListener("click", () => downloadBatch("xlsx"));
+    document.getElementById("batch-download-csv")?.addEventListener("click", () => downloadBatch("csv"));
   });
 
   function persistInputs() {
@@ -159,7 +162,7 @@ console.log("app.js loaded");
     }
   }
 
-  // Export helpers kept (not visible in History by design)
+  // Export helpers available if you want to call from console
   window._cordify_exportHistory = function exportHistory(type, rowIdx) {
     const arr = (function(){ try{ return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }catch{ return []; }})();
     let data = arr;
@@ -207,7 +210,6 @@ console.log("app.js loaded");
 })();
 
 /* ----------------------------- Converters ----------------------------- */
-// Robust DMS string parser
 function parseDmsString(dmsStr) {
   if (!dmsStr) return null;
   dmsStr = dmsStr.trim()
@@ -338,7 +340,7 @@ function convertDdToDms() {
   }
 }
 
-// ---------- small helpers for UI ----------
+// ---------- small helpers ----------
 function clearDmsInputs() {
   ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec"].forEach(id=>{
     const el = document.getElementById(id); if (el) el.value = "";
@@ -363,3 +365,168 @@ function swapDd() {
   const tmp = latEl.value; latEl.value = lonEl.value; lonEl.value = tmp;
   persistInputs();
 }
+
+/* ======================== BATCH (Excel/CSV) ======================== */
+let _batch = { rows: [], headers: [], outRows: [], outHeaders: [] };
+
+function onBatchFormatChange() {
+  const fmt = document.getElementById("batch-format")?.value || "dd-columns";
+  document.getElementById("map-dd").style.display  = (fmt === "dd-columns") ? "" : "none";
+  document.getElementById("map-dms").style.display = (fmt === "dms-strings") ? "" : "none";
+}
+
+async function handleBatchFile(e) {
+  const file = e.target.files?.[0];
+  resetBatchUI();
+  if (!file) return;
+
+  try {
+    const data = await file.arrayBuffer();
+    // XLSX reads both Excel and CSV
+    const wb = XLSX.read(data, { type: "array" });
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(ws, { raw: true });
+    if (!Array.isArray(json) || !json.length) throw new Error("Empty sheet");
+
+    _batch.rows = json;
+    _batch.headers = Object.keys(json[0]);
+
+    populateMapping(_batch.headers);
+    document.getElementById("batch-mapping").style.display = "";
+    document.getElementById("batch-actions").style.display = "";
+    document.getElementById("batch-status").textContent = `Loaded ${json.length} rows from “${sheetName}”`;
+  } catch (err) {
+    document.getElementById("batch-status").textContent = "Failed to read file.";
+  }
+}
+
+function populateMapping(headers) {
+  const ddLat = document.getElementById("map-dd-lat");
+  const ddLon = document.getElementById("map-dd-lon");
+  const dmsLat = document.getElementById("map-dms-lat");
+  const dmsLon = document.getElementById("map-dms-lon");
+  [ddLat, ddLon, dmsLat, dmsLon].forEach(sel => { sel.innerHTML = ""; headers.forEach(h => {
+    const o = document.createElement("option"); o.value = o.textContent = h; sel.appendChild(o);
+  });});
+  onBatchFormatChange();
+}
+
+function runBatch() {
+  if (!_batch.rows.length) return;
+
+  const dir = document.getElementById("batch-direction").value;         // DD2DMS | DMS2DD
+  const fmt = document.getElementById("batch-format").value;            // dd-columns | dms-strings
+  let latCol, lonCol;
+
+  if (fmt === "dd-columns") {
+    latCol = document.getElementById("map-dd-lat").value;
+    lonCol = document.getElementById("map-dd-lon").value;
+  } else {
+    latCol = document.getElementById("map-dms-lat").value;
+    lonCol = document.getElementById("map-dms-lon").value;
+  }
+
+  const outRows = [];
+  const outHeaders = new Set([..._batch.headers]);
+
+  if (dir === "DD2DMS") {
+    outHeaders.add("lat_dms");
+    outHeaders.add("lon_dms");
+    const secDigits = parseInt(document.getElementById("precision-dms")?.value || "3", 10);
+
+    for (const row of _batch.rows) {
+      const lat = parseFloat(row[latCol]);
+      const lon = parseFloat(row[lonCol]);
+      const latOk = !Number.isNaN(lat) && inLatRange(lat);
+      const lonOk = !Number.isNaN(lon) && inLonRange(lon);
+      const copy = { ...row };
+      if (latOk && lonOk) {
+        copy.lat_dms = ddToDms(lat, "lat", secDigits);
+        copy.lon_dms = ddToDms(lon, "lon", secDigits);
+      } else {
+        copy.lat_dms = "";
+        copy.lon_dms = "";
+      }
+      outRows.push(copy);
+    }
+  } else {
+    // DMS2DD
+    outHeaders.add("lat_dd");
+    outHeaders.add("lon_dd");
+    const prec = parseInt(document.getElementById("precision-dd")?.value || "6", 10);
+
+    for (const row of _batch.rows) {
+      const copy = { ...row };
+      const latStr = String(row[latCol] ?? "").trim();
+      const lonStr = String(row[lonCol] ?? "").trim();
+      const lat = parseDmsString(latStr);
+      const lon = parseDmsString(lonStr);
+      if (lat !== null && lon !== null && inLatRange(lat) && inLonRange(lon)) {
+        copy.lat_dd = lat.toFixed(prec);
+        copy.lon_dd = lon.toFixed(prec);
+      } else {
+        copy.lat_dd = "";
+        copy.lon_dd = "";
+      }
+      outRows.push(copy);
+    }
+  }
+
+  _batch.outRows = outRows;
+  _batch.outHeaders = Array.from(outHeaders);
+
+  renderBatchPreview(outRows, _batch.outHeaders);
+  document.getElementById("batch-preview-wrap").style.display = "";
+  document.getElementById("batch-status").textContent = `Converted ${outRows.length} rows.`;
+}
+
+function renderBatchPreview(rows, headers) {
+  const head = document.getElementById("batch-head");
+  const body = document.getElementById("batch-body");
+  head.innerHTML = ""; body.innerHTML = "";
+
+  headers.forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    head.appendChild(th);
+  });
+
+  rows.slice(0, 20).forEach(r => {
+    const tr = document.createElement("tr");
+    headers.forEach(h => {
+      const td = document.createElement("td");
+      td.textContent = r[h] !== undefined ? r[h] : "";
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+function downloadBatch(type) {
+  if (!_batch.outRows.length) return;
+  if (type === "xlsx") {
+    const ws = XLSX.utils.json_to_sheet(_batch.outRows, { header: _batch.outHeaders });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Converted");
+    XLSX.writeFile(wb, "cordify_converted.xlsx");
+  } else {
+    const ws = XLSX.utils.json_to_sheet(_batch.outRows, { header: _batch.outHeaders });
+    const csv = XLSX.utils.sheet_to_csv(ws);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "cordify_converted.csv";
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  }
+}
+
+function resetBatchUI() {
+  _batch = { rows: [], headers: [], outRows: [], outHeaders: [] };
+  document.getElementById("batch-mapping").style.display = "none";
+  document.getElementById("batch-actions").style.display = "none";
+  document.getElementById("batch-preview-wrap").style.display = "none";
+  document.getElementById("batch-status").textContent = "";
+}
+/* ====================== END BATCH ====================== */
