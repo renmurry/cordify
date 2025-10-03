@@ -63,10 +63,12 @@ console.log('app.js loaded');
       tr.innerHTML = `
         <td>${i+1}</td>
         <td>${item.type || ''}</td>
-        <td>${escapeHtml(item.input)}</td>
-        <td>${escapeHtml(item.result)}</td>
+        <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.input)}">${escapeHtml(item.input)}</pre></td>
+        <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.result)}">${escapeHtml(item.result)}</pre></td>
         <td>${item.date ? new Date(item.date).toLocaleString() : ''}</td>
         <td>
+          <button type="button" class="copy-in" data-idx="${i}">Copy In</button>
+          <button type="button" class="copy-out" data-idx="${i}">Copy Result</button>
           <button type="button" class="export-row-xlsx" data-idx="${i}">Excel</button>
           <button type="button" class="export-row-csv" data-idx="${i}">CSV</button>
         </td>
@@ -99,12 +101,37 @@ console.log('app.js loaded');
     const btnCsv = document.getElementById('export-history-csv');
     if (btnXlsx) btnXlsx.onclick = () => exportHistory('xlsx');
     if (btnCsv) btnCsv.onclick = () => exportHistory('csv');
-    // Row export
+    // Row export + copy actions
     document.getElementById('history-table')?.addEventListener('click', e => {
-      if (e.target.classList.contains('export-row-xlsx')) exportHistory('xlsx', parseInt(e.target.dataset.idx));
-      if (e.target.classList.contains('export-row-csv')) exportHistory('csv', parseInt(e.target.dataset.idx));
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.classList.contains('export-row-xlsx')) exportHistory('xlsx', parseInt(target.dataset.idx));
+      if (target.classList.contains('export-row-csv')) exportHistory('csv', parseInt(target.dataset.idx));
+      if (target.classList.contains('copy-in')) {
+        const arr = getHistory(); const idx = parseInt(target.dataset.idx);
+        if (arr[idx]) copyText(arr[idx].input);
+      }
+      if (target.classList.contains('copy-out')) {
+        const arr = getHistory(); const idx = parseInt(target.dataset.idx);
+        if (arr[idx]) copyText(arr[idx].result);
+      }
     });
   });
+
+  function copyText(text) {
+    const t = String(text ?? '');
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(t).then(()=>{},()=>fallback());
+    } else {
+      fallback();
+    }
+    function fallback() {
+      const ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch {}
+      document.body.removeChild(ta);
+    }
+  }
 
   // --- Export Logic ---
   function exportHistory(type, rowIdx) {
