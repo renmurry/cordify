@@ -1,34 +1,59 @@
 :root { color-scheme: light dark; }
+
+/* Base */
 body { font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
 label, input, select { margin: 4px; }
-.container { padding: 16px; border: 1px solid #333; max-width: 720px; margin: 24px auto; border-radius: 8px; }
+.container {
+  padding: 16px;
+  border: 1px solid #333;
+  max-width: 720px;
+  margin: 24px auto;
+  border-radius: 8px;
+}
 .row { margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
-textarea.result {
-  width: 100%; height: 96px; background: #f3f3f3; border-radius: 4px; padding: 8px;
-  resize: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 14px; border: 1px solid #ccc; color: #333;
-}
-
+/* Buttons & tabs */
 button { cursor: pointer; padding: 6px 12px; border-radius: 6px; }
 button.btn-primary { border: 1px solid #4a90e2; }
 .tab-btn { padding: 6px 10px; border: 1px solid #444; background: transparent; }
 .tab-btn + .tab-btn { margin-left: 8px; }
 .tab-btn.is-active { background: rgba(74,144,226,.15); border-color: #4a90e2; }
 
-.table { border-collapse: collapse; }
-.table th, .table td { border-bottom: 1px solid #333; padding: 6px 8px; text-align: left; vertical-align: top; }
+/* Results */
+textarea.result {
+  width: 100%;
+  height: 96px;
+  background: #f3f3f3;
+  border-radius: 4px;
+  padding: 8px;
+  resize: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  color: #333;
+}
+
+/* Table */
+.table { border-collapse: collapse; width: 100%; }
+.table th, .table td {
+  border-bottom: 1px solid #333;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
 .table tr:hover { background: rgba(128,128,128,.08); }
 
+/* Helpers */
 .small { font-size: 12px; opacity: .8; }
 .inline { display: inline-flex; align-items: center; gap: 8px; }
-
-.invalid { outline: 2px solid #d33; border-color: #d33 !important; }
-.error { color: #d66; font-size: 13px; margin: 2px 4px 8px; display: none; }
-
 .copy-wrap { display:flex; align-items:center; gap:8px; }
 .copy-btn { border: 1px solid #444; background: transparent; }
 
+/* Validation / errors */
+.invalid { outline: 2px solid #d33; border-color: #d33 !important; }
+.error { color: #d66; font-size: 13px; margin: 2px 4px 8px; display: none; }
+
+/* Dark mode tweaks */
 @media (prefers-color-scheme: dark) {
   .container { border-color: #555; }
   textarea.result { background: #1f1f1f; color: #eaeaea; border-color: #3a3a3a; }
