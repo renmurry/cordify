@@ -1,6 +1,17 @@
 // scripts for cordify
 console.log('app.js loaded');
 
+// Register Service Worker (handles GitHub Pages subpath)
+(() => {
+  if ('serviceWorker' in navigator) {
+    const swUrl = 'service-worker.js';
+    const scope = './';
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register(swUrl, { scope }).catch(() => {/* no-op */});
+    });
+  }
+})();
+
 // --- Cordify App: Conversion History, Export, and UI Tabs ---
 (function() {
   // --- Constants ---
@@ -227,85 +238,45 @@ function inLatRange(v) { return v >= -90 && v <= 90; }
 function inLonRange(v) { return v >= -180 && v <= 180; }
 
 function convertDmsToDd() {
-  const latStr = document.getElementById('dms_lat_string').value.trim();
-  const lonStr = document.getElementById('dms_lon_string').value.trim();
-  let dd_lat, dd_lon;
+  const latStr = (document.getElementById('dms_lat_string')?.value || '').trim();
+  const lonStr = (document.getElementById('dms_lon_string')?.value || '').trim();
 
-  if (latStr) {
-    dd_lat = parseDmsString(latStr);
-    if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude DMS.'); return; }
-  } else {
-    dd_lat = dmsToDd(
-      parseFloat(document.getElementById('dms_lat_deg').value) || 0,
-      parseFloat(document.getElementById('dms_lat_min').value) || 0,
-      parseFloat(document.getElementById('dms_lat_sec').value) || 0,
-      document.getElementById('dms_lat_dir').value
-    );
-    if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude D/M/S.'); return; }
+  const latDeg = parseFloat(document.getElementById('dms_lat_deg')?.value);
+  const latMin = parseFloat(document.getElementById('dms_lat_min')?.value);
+  const latSec = parseFloat(document.getElementById('dms_lat_sec')?.value);
+  const latDir = document.getElementById('dms_lat_dir')?.value;
+
+  const lonDeg = parseFloat(document.getElementById('dms_lon_deg')?.value);
+  const lonMin = parseFloat(document.getElementById('dms_lon_min')?.value);
+  const lonSec = parseFloat(document.getElementById('dms_lon_sec')?.value);
+  const lonDir = document.getElementById('dms_lon_dir')?.value;
+
+  let dd_lat = latStr ? parseDmsString(latStr) : dmsToDd(latDeg || 0, latMin || 0, latSec || 0, latDir || 'N');
+  if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude.'); return; }
+  let dd_lon = lonStr ? parseDmsString(lonStr) : dmsToDd(lonDeg || 0, lonMin || 0, lonSec || 0, lonDir || 'E');
+  if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude.'); return; }
+
+  const ddText = `Latitude (Y): ${dd_lat.toFixed(6)}\nLongitude (X): ${dd_lon.toFixed(6)}`;
+  document.getElementById('dd_result').value = ddText;
+
+  const inputSummary = latStr
+    ? `Lat: ${latStr}\n`
+    : `Lat: ${document.getElementById('dms_lat_deg')?.value}° ${document.getElementById('dms_lat_min')?.value}' ${document.getElementById('dms_lat_sec')?.value}" ${latDir}` + '\n';
+  const inputSummary2 = lonStr
+    ? `Lon: ${lonStr}`
+    : `Lon: ${document.getElementById('dms_lon_deg')?.value}° ${document.getElementById('dms_lon_min')?.value}' ${document.getElementById('dms_lon_sec')?.value}" ${lonDir}`;
+
+  const resultSummary = `Lat: ${dd_lat.toFixed(6)}\nLon: ${dd_lon.toFixed(6)}`;
+
+  window._cordify_addHistory && window._cordify_addHistory({
+    type: 'DMS→DD',
+    input: inputSummary + inputSummary2,
+    result: resultSummary,
+    date: Date.now()
+  });
+  if (document.getElementById('history-tab')?.style.display !== 'none') {
+    window._cordify_renderHistory && window._cordify_renderHistory();
   }
-
-  if (lonStr) {
-    dd_lon = parseDmsString(lonStr);
-    if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude DMS.'); return; }
-  } else {
-    dd_lon = dmsToDd(
-      parseFloat(document.getElementById('dms_lon_deg').value) || 0,
-      parseFloat(document.getElementById('dms_lon_min').value) || 0,
-      parseFloat(document.getElementById('dms_lon_sec').value) || 0,
-      document.getElementById('dms_lon_dir').value
-    );
-    if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude D/M/S.'); return; }
-  }
-
-  document.getElementById('dd_result').value =
-    `Latitude (Y): ${dd_lat.toFixed(6)}\nLongitude (X): ${dd_lon.toFixed(6)}`;
-    let inputSummary = '', resultSummary = '';
-
-    if (latStr) {
-      dd_lat = parseDmsString(latStr);
-      if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude DMS.'); return; }
-      inputSummary += `Lat: ${latStr}\n`;
-    } else {
-      dd_lat = dmsToDd(
-        parseFloat(document.getElementById('dms_lat_deg').value) || 0,
-        parseFloat(document.getElementById('dms_lat_min').value) || 0,
-        parseFloat(document.getElementById('dms_lat_sec').value) || 0,
-        document.getElementById('dms_lat_dir').value
-      );
-      if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude D/M/S.'); return; }
-      inputSummary += `Lat: ${document.getElementById('dms_lat_deg').value}° ${document.getElementById('dms_lat_min').value}' ${document.getElementById('dms_lat_sec').value}" ${document.getElementById('dms_lat_dir').value}\n`;
-    }
-
-    if (lonStr) {
-      dd_lon = parseDmsString(lonStr);
-      if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude DMS.'); return; }
-      inputSummary += `Lon: ${lonStr}`;
-    } else {
-      dd_lon = dmsToDd(
-        parseFloat(document.getElementById('dms_lon_deg').value) || 0,
-        parseFloat(document.getElementById('dms_lon_min').value) || 0,
-        parseFloat(document.getElementById('dms_lon_sec').value) || 0,
-        document.getElementById('dms_lon_dir').value
-      );
-      if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude D/M/S.'); return; }
-      inputSummary += `Lon: ${document.getElementById('dms_lon_deg').value}° ${document.getElementById('dms_lon_min').value}' ${document.getElementById('dms_lon_sec').value}" ${document.getElementById('dms_lon_dir').value}`;
-    }
-
-    resultSummary = `Lat: ${dd_lat.toFixed(6)}\nLon: ${dd_lon.toFixed(6)}`;
-    document.getElementById('dd_result').value =
-      `Latitude (Y): ${dd_lat.toFixed(6)}\nLongitude (X): ${dd_lon.toFixed(6)}`;
-
-    // Store in history
-    window._cordify_addHistory && window._cordify_addHistory({
-      type: 'DMS→DD',
-      input: inputSummary,
-      result: resultSummary,
-      date: Date.now()
-    });
-    // Refresh history if visible
-    if (document.getElementById('history-tab')?.style.display !== 'none') {
-      window._cordify_renderHistory && window._cordify_renderHistory();
-    }
 }
 
 function convertDdToDms() {

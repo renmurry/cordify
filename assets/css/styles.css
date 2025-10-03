@@ -11,3 +11,8 @@
   }
   button { cursor: pointer; padding: 6px 12px; border-radius: 6px; }
 /* styles for cordify */
+
+@media (prefers-color-scheme: dark) {
+  .container { border-color: #555; }
+  textarea.result { background: #1f1f1f; color: #eaeaea; border-color: #3a3a3a; }
+}
