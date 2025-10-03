@@ -24,3 +24,4 @@ Service worker caches assets for offline use. To see updates:
 - History is stored in localStorage (max ~1000 entries).
 - Export to CSV/XLSX uses SheetJS via CDN; requires network on first load.
 - The app works under GitHub Pages subpaths thanks to relative asset URLs and SW scope `./`.
+ - New: Copy buttons for results, disabled export buttons when history is empty, and basic invalid input highlighting.

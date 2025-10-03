@@ -10,6 +10,10 @@
   <meta name="theme-color" content="#4a90e2">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Convert coordinates between DMS and DD formats with history and offline support.">
+  <!-- iOS PWA enhancements -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="favicon.ico" sizes="180x180">
 </head>
 <body>
 <div class="container">
@@ -19,6 +23,7 @@
     <button id="tab-history" class="tab-btn" type="button">History</button>
   </nav>
   <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
+  <p style="margin-top:-4px;color:#666">Note: Latitude = Y, Longitude = X</p>
 
   <!-- Conversion Tab -->
   <div id="convert-tab">
@@ -41,9 +46,9 @@
     <!-- Separate D/M/S inputs (optional alternative) -->
     <div class="row">
       <b>Latitude (Y):</b>
-      <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg"></label>
-      <label>' <input id="dms_lat_min" type="number" step="1" placeholder="min"></label>
-      <label>" <input id="dms_lat_sec" type="number" step="any" placeholder="sec"></label>
+  <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg" min="0" max="90"></label>
+  <label>' <input id="dms_lat_min" type="number" step="1" placeholder="min" min="0" max="59"></label>
+  <label>" <input id="dms_lat_sec" type="number" step="any" placeholder="sec" min="0" max="59.9999"></label>
       <select id="dms_lat_dir">
         <option value="N">N</option>
         <option value="S">S</option>
@@ -51,9 +56,9 @@
     </div>
     <div class="row">
       <b>Longitude (X):</b>
-      <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg"></label>
-      <label>' <input id="dms_lon_min" type="number" step="1" placeholder="min"></label>
-      <label>" <input id="dms_lon_sec" type="number" step="any" placeholder="sec"></label>
+  <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg" min="0" max="180"></label>
+  <label>' <input id="dms_lon_min" type="number" step="1" placeholder="min" min="0" max="59"></label>
+  <label>" <input id="dms_lon_sec" type="number" step="any" placeholder="sec" min="0" max="59.9999"></label>
       <select id="dms_lon_dir">
         <option value="E">E</option>
         <option value="W">W</option>
@@ -62,7 +67,10 @@
 
     
     <button type="button" onclick="convertDmsToDd()">Convert to DD</button>
-    <textarea class="result" id="dd_result" readonly></textarea>
+    <div class="row" style="align-items:flex-start">
+      <textarea class="result" id="dd_result" readonly></textarea>
+      <button id="copy-dd-btn" type="button" title="Copy results">Copy</button>
+    </div>
   </div>
 
   <hr>
@@ -72,14 +80,17 @@
     <h4>DD to DMS</h4>
     <div class="row">
       <b>Latitude (Y):</b>
-      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242"></label>
+  <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242" min="-90" max="90"></label>
     </div>
     <div class="row">
       <b>Longitude (X):</b>
-      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667"></label>
+  <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667" min="-180" max="180"></label>
     </div>
     <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
-    <textarea class="result" id="dms_result" readonly></textarea>
+    <div class="row" style="align-items:flex-start">
+      <textarea class="result" id="dms_result" readonly></textarea>
+      <button id="copy-dms-btn" type="button" title="Copy results">Copy</button>
+    </div>
 
     <!-- History Tab -->
     <div id="history-tab" style="display:none">

@@ -59,16 +59,22 @@ console.log('app.js loaded');
     const table = document.getElementById('history-table');
     const tbody = table ? table.querySelector('tbody') : null;
     const emptyMsg = document.getElementById('history-empty');
+    const exportAllXlsx = document.getElementById('export-history-xlsx');
+    const exportAllCsv = document.getElementById('export-history-csv');
     if (!tbody) return;
     tbody.innerHTML = '';
     const arr = getHistory();
     if (!arr.length) {
       if (emptyMsg) emptyMsg.style.display = '';
       table.style.display = 'none';
+      if (exportAllXlsx) exportAllXlsx.disabled = true;
+      if (exportAllCsv) exportAllCsv.disabled = true;
       return;
     }
     if (emptyMsg) emptyMsg.style.display = 'none';
     table.style.display = '';
+    if (exportAllXlsx) exportAllXlsx.disabled = false;
+    if (exportAllCsv) exportAllCsv.disabled = false;
     arr.forEach((item, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
@@ -102,6 +108,19 @@ console.log('app.js loaded');
         }
       };
     }
+    // Copy buttons
+    const copyDd = document.getElementById('copy-dd-btn');
+    const copyDms = document.getElementById('copy-dms-btn');
+    copyDd && (copyDd.onclick = async () => {
+      const txt = document.getElementById('dd_result')?.value || '';
+      if (!txt) return;
+      try { await navigator.clipboard.writeText(txt); copyDd.textContent = 'Copied'; setTimeout(()=>copyDd.textContent='Copy',1000); } catch {}
+    });
+    copyDms && (copyDms.onclick = async () => {
+      const txt = document.getElementById('dms_result')?.value || '';
+      if (!txt) return;
+      try { await navigator.clipboard.writeText(txt); copyDms.textContent = 'Copied'; setTimeout(()=>copyDms.textContent='Copy',1000); } catch {}
+    });
   });
 
   // --- Export All (Excel/CSV) ---
@@ -251,10 +270,20 @@ function convertDmsToDd() {
   const lonSec = parseFloat(document.getElementById('dms_lon_sec')?.value);
   const lonDir = document.getElementById('dms_lon_dir')?.value;
 
+  // remove invalid styles first
+  ['dms_lat_deg','dms_lat_min','dms_lat_sec','dms_lon_deg','dms_lon_min','dms_lon_sec'].forEach(id=>{
+    const el = document.getElementById(id); el && el.classList.remove('invalid');
+  });
   let dd_lat = latStr ? parseDmsString(latStr) : dmsToDd(latDeg || 0, latMin || 0, latSec || 0, latDir || 'N');
-  if (dd_lat === null || !inLatRange(dd_lat)) { alert('Invalid Latitude.'); return; }
+  if (dd_lat === null || !inLatRange(dd_lat)) {
+    if (!latStr) ['dms_lat_deg','dms_lat_min','dms_lat_sec'].forEach(id=>document.getElementById(id)?.classList.add('invalid'));
+    alert('Invalid Latitude.'); return;
+  }
   let dd_lon = lonStr ? parseDmsString(lonStr) : dmsToDd(lonDeg || 0, lonMin || 0, lonSec || 0, lonDir || 'E');
-  if (dd_lon === null || !inLonRange(dd_lon)) { alert('Invalid Longitude.'); return; }
+  if (dd_lon === null || !inLonRange(dd_lon)) {
+    if (!lonStr) ['dms_lon_deg','dms_lon_min','dms_lon_sec'].forEach(id=>document.getElementById(id)?.classList.add('invalid'));
+    alert('Invalid Longitude.'); return;
+  }
 
   const ddText = `Latitude (Y): ${dd_lat.toFixed(6)}\nLongitude (X): ${dd_lon.toFixed(6)}`;
   document.getElementById('dd_result').value = ddText;
