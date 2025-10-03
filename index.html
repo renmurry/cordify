@@ -157,8 +157,9 @@
       </div>
     </div>
 
-    <div class="inline" id="batch-actions" style="display:none; margin:6px 0 10px;">
-      <button class="btn-primary" id="batch-run" type="button">Run Batch</button>
+    <!-- Actions row is always visible -->
+    <div class="inline" id="batch-actions" style="margin:6px 0 10px;">
+      <button class="btn-primary" id="batch-run" type="button">Convert (Run Batch)</button>
       <button id="batch-download-xlsx" type="button">Download XLSX</button>
       <button id="batch-download-csv" type="button">Download CSV</button>
       <span class="small" id="batch-status"></span>
@@ -195,7 +196,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
-<script src="./assets/js/app.js?v=5" defer></script>
+<script src="./assets/js/app.js?v=6" defer></script>
 
 <script>
   if ('serviceWorker' in navigator) {
