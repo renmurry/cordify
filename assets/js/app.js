@@ -17,6 +17,8 @@ console.log('app.js loaded');
   const DEFAULT_META = { crs: 'EPSG:4326', precision: 6 };
   let activeTab = 'convert';
   let panel;
+  let convertMode = sessionStorage.getItem('convert_mode') || 'DMS→DD';
+  let historyFilter = sessionStorage.getItem('history_filter') || 'all';
 
   document.addEventListener('DOMContentLoaded', () => {
     panel = document.getElementById('panel');
@@ -51,6 +53,16 @@ console.log('app.js loaded');
   function td(n){ return el('td', {}, n); }
   function trHead(cols){ return el('tr', {}, cols.map(c=>el('th',{},c))); }
   function code(text){ return el('code', { title: text }, text); }
+  function setResult(id, text){
+    const elmt = document.getElementById(id);
+    if (!elmt) return;
+    if ('value' in elmt) elmt.value = text; else elmt.textContent = text;
+  }
+  function getResultText(id){
+    const elmt = document.getElementById(id);
+    if (!elmt) return '';
+    return 'value' in elmt ? (elmt.value || '') : (elmt.textContent || '');
+  }
 
   // Temporary test hook
   window.__assertNoInputsOnHistory = () => (activeTab==='history') && document.querySelectorAll('#panel input,#panel select,#panel textarea').length===0;
@@ -61,6 +73,13 @@ console.log('app.js loaded');
     let prefill = null;
     try { prefill = JSON.parse(sessionStorage.getItem('convert_prefill')); } catch {}
     sessionStorage.removeItem('convert_prefill');
+
+    // Direction select
+    const dirRow = el('div',{class:'row'},[
+      el('label',{},['Direction: ', el('select',{id:'conv_dir',onchange:(e)=>{ convertMode=e.target.value; sessionStorage.setItem('convert_mode', convertMode); render(); }},[opt('DMS→DD'),opt('DD→DMS')])])
+    ]);
+    // set value after mount
+    setTimeout(()=>{ const s=document.getElementById('conv_dir'); if (s) s.value=convertMode; },0);
 
     const row1 = el('div',{class:'row'},[
       el('label',{},['Latitude DMS: ', el('input',{id:'dms_lat_string',type:'text',placeholder:'e.g. 12°34\'56.7\" N or -12 34 56.7'})])
@@ -85,9 +104,9 @@ console.log('app.js loaded');
     ]);
     const btnConv = el('button',{type:'button',onclick:()=>convertDmsToDd()},'Convert to DD');
     const resultRow = el('div',{class:'row',style:{alignItems:'flex-start'}},[
-      el('textarea',{class:'result',id:'dd_result',readOnly:true}),
+      el('pre',{class:'result',id:'dd_result'}),
       el('button',{id:'copy-dd-btn',type:'button',title:'Copy results',onclick:async()=>{
-        const txt = document.getElementById('dd_result')?.value || ''; if (!txt) return;
+        const txt = getResultText('dd_result'); if (!txt) return;
         try { await navigator.clipboard.writeText(txt); } catch {}
       }},'Copy')
     ]);
@@ -104,9 +123,9 @@ console.log('app.js loaded');
     ]);
     const btnConv2 = el('button',{type:'button',onclick:()=>convertDdToDms()},'Convert to DMS');
     const resultRow2 = el('div',{class:'row',style:{alignItems:'flex-start'}},[
-      el('textarea',{class:'result',id:'dms_result',readOnly:true}),
+      el('pre',{class:'result',id:'dms_result'}),
       el('button',{id:'copy-dms-btn',type:'button',title:'Copy results',onclick:async()=>{
-        const txt = document.getElementById('dms_result')?.value || ''; if (!txt) return;
+        const txt = getResultText('dms_result'); if (!txt) return;
         try { await navigator.clipboard.writeText(txt); } catch {}
       }},'Copy')
     ]);
@@ -129,43 +148,41 @@ console.log('app.js loaded');
       }
     }
 
-    panel.appendChild(el('h4',{},'DMS to DD'));
-    panel.appendChild(row1);
-    panel.appendChild(row2);
-    panel.appendChild(hr);
-    panel.appendChild(dmsLat);
-    panel.appendChild(dmsLon);
-    panel.appendChild(btnConv);
-    panel.appendChild(resultRow);
-    panel.appendChild(hr2);
-    panel.appendChild(h4b);
-    panel.appendChild(ddLat);
-    panel.appendChild(ddLon);
-    panel.appendChild(btnConv2);
-    panel.appendChild(resultRow2);
+    // Render depending on convertMode
+    panel.appendChild(dirRow);
+    if (convertMode==='DMS→DD') {
+      panel.appendChild(el('h4',{},'DMS to DD'));
+      panel.appendChild(row1);
+      panel.appendChild(row2);
+      panel.appendChild(hr);
+      panel.appendChild(dmsLat);
+      panel.appendChild(dmsLon);
+      panel.appendChild(btnConv);
+      panel.appendChild(resultRow);
+    } else {
+      panel.appendChild(h4b);
+      panel.appendChild(ddLat);
+      panel.appendChild(ddLon);
+      panel.appendChild(btnConv2);
+      panel.appendChild(resultRow2);
+    }
   }
 
   // --- Render History ---
   function renderHistory(items){
     const wrap = el('div',{});
-    const savedType = sessionStorage.getItem('history_filter') || 'all';
     const controls = el('div',{class:'row',style:{justifyContent:'space-between'}},[
       el('div',{},[
-        el('label',{for:'history-filter'},'Filter: '),
-        el('select',{id:'history-filter',onchange:(e)=>{
-          sessionStorage.setItem('history_filter', e.target.value);
-          activeTab='history';
-          render();
-        }},[opt('all','All'),opt('DMS→DD'),opt('DD→DMS')])
+        el('span',{},'Filter: '),
+        el('button',{type:'button',onclick:()=>{ historyFilter='all'; sessionStorage.setItem('history_filter','all'); render(); }, 'aria-pressed': String(historyFilter==='all')},'All'),
+        el('button',{type:'button',onclick:()=>{ historyFilter='DMS→DD'; sessionStorage.setItem('history_filter','DMS→DD'); render(); }, 'aria-pressed': String(historyFilter==='DMS→DD')},'DMS→DD'),
+        el('button',{type:'button',onclick:()=>{ historyFilter='DD→DMS'; sessionStorage.setItem('history_filter','DD→DMS'); render(); }, 'aria-pressed': String(historyFilter==='DD→DMS')},'DD→DMS')
       ]),
       el('div',{},[
         el('button',{id:'clear-history-btn',type:'button',onclick:()=>{ if (confirm('Clear all?')) { window.historyStore.clear(); render(); } }},'Clear All')
       ])
     ]);
-    // set filter value
-    setTimeout(()=>{ const f=document.getElementById('history-filter'); if (f) f.value=savedType; },0);
-
-    const data = (savedType==='all'? items : (window.historyStore.filterByType(savedType)) );
+    const data = (historyFilter==='all'? items : (window.historyStore.filterByType(historyFilter)) );
 
     if (!data.length) {
       wrap.appendChild(controls);
