@@ -13,75 +13,110 @@
 <body>
 <div class="container">
 
-  <!-- TABS: add History button -->
   <nav style="margin-bottom: 1em;">
-    <button id="tab-convert" class="tab-btn" type="button">Conversion</button>
+    <button id="tab-convert" class="tab-btn is-active" type="button">Conversion</button>
     <button id="tab-history" class="tab-btn" type="button">History</button>
   </nav>
 
   <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
 
-  <!-- Conversion Tab (ALL conversion UI stays inside this one container) -->
+  <!-- Conversion Tab -->
   <div id="convert-tab">
     <h4>DMS to DD</h4>
+
+    <div class="small inline" style="margin: 4px 0 8px;">
+      <span>Precision (DD):</span>
+      <select id="precision-dd">
+        <option value="6" selected>6</option>
+        <option value="5">5</option>
+        <option value="4">4</option>
+        <option value="3">3</option>
+      </select>
+      <span class="small">Press <b>Enter</b> in inputs to convert</span>
+    </div>
 
     <!-- Single-string DMS inputs -->
     <div class="row">
       <label>Latitude DMS:
-        <input id="dms_lat_string" type="text" placeholder='e.g. 12°34&#39;56.7&quot; N or -12 34 56.7'>
+        <input id="dms_lat_string" type="text" placeholder='e.g. 12°34&#39;56.7&quot; N or -12 34 56.7' aria-label="Latitude DMS">
       </label>
     </div>
     <div class="row">
       <label>Longitude DMS:
-        <input id="dms_lon_string" type="text" placeholder='e.g. 77°35&#39;12&quot; E or -77 35 12'>
+        <input id="dms_lon_string" type="text" placeholder='e.g. 77°35&#39;12&quot; E or -77 35 12' aria-label="Longitude DMS">
       </label>
     </div>
+    <div class="error" id="err-dms">Invalid DMS input. Check ranges (min&lt;60, sec&lt;60) and use N/S/E/W correctly.</div>
 
-    <hr style="margin-top:15px; margin-bottom:15px;">
+    <hr style="margin-top:12px; margin-bottom:12px;">
 
-    <!-- Separate D/M/S inputs (optional alternative) -->
+    <!-- Separate D/M/S inputs -->
     <div class="row">
       <b>Latitude (Y):</b>
-      <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg"></label>
-      <label>' <input id="dms_lat_min" type="number" step="1" placeholder="min"></label>
-      <label>" <input id="dms_lat_sec" type="number" step="any" placeholder="sec"></label>
-      <select id="dms_lat_dir">
-        <option value="N">N</option>
-        <option value="S">S</option>
+      <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg" aria-label="Lat degrees" ></label>
+      <label>' <input id="dms_lat_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Lat minutes"></label>
+      <label>" <input id="dms_lat_sec" type="number" step="any" min="0" max="59.9999" placeholder="sec" aria-label="Lat seconds"></label>
+      <select id="dms_lat_dir" aria-label="Lat direction">
+        <option value="N">N</option><option value="S">S</option>
       </select>
     </div>
     <div class="row">
       <b>Longitude (X):</b>
-      <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg"></label>
-      <label>' <input id="dms_lon_min" type="number" step="1" placeholder="min"></label>
-      <label>" <input id="dms_lon_sec" type="number" step="any" placeholder="sec"></label>
-      <select id="dms_lon_dir">
-        <option value="E">E</option>
-        <option value="W">W</option>
+      <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg" aria-label="Lon degrees"></label>
+      <label>' <input id="dms_lon_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Lon minutes"></label>
+      <label>" <input id="dms_lon_sec" type="number" step="any" min="0" max="59.9999" placeholder="sec" aria-label="Lon seconds"></label>
+      <select id="dms_lon_dir" aria-label="Lon direction">
+        <option value="E">E</option><option value="W">W</option>
       </select>
     </div>
 
-    <button type="button" onclick="convertDmsToDd()">Convert to DD</button>
-    <textarea class="result" id="dd_result" readonly></textarea>
+    <div class="inline" style="margin:6px 0 10px;">
+      <button class="btn-primary" type="button" id="btn-dms2dd">Convert to DD</button>
+      <button type="button" id="btn-clear-dms" title="Clear DMS inputs">Clear</button>
+    </div>
+
+    <div class="copy-wrap">
+      <textarea class="result" id="dd_result" readonly></textarea>
+      <button type="button" class="copy-btn" id="copy-dd">Copy</button>
+    </div>
 
     <hr>
 
-    <!-- DD to DMS (kept INSIDE convert-tab now) -->
     <h4>DD to DMS</h4>
+    <div class="small inline" style="margin: 4px 0 8px;">
+      <span>Precision (seconds):</span>
+      <select id="precision-dms">
+        <option value="3" selected>3</option>
+        <option value="2">2</option>
+        <option value="1">1</option>
+        <option value="0">0</option>
+      </select>
+    </div>
+
     <div class="row">
       <b>Latitude (Y):</b>
-      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242"></label>
+      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242" aria-label="Latitude DD"></label>
     </div>
     <div class="row">
       <b>Longitude (X):</b>
-      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667"></label>
+      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667" aria-label="Longitude DD"></label>
     </div>
-    <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
-    <textarea class="result" id="dms_result" readonly></textarea>
+    <div class="error" id="err-dd">Enter valid DD (Lat −90..90, Lon −180..180)</div>
+
+    <div class="inline" style="margin:6px 0 10px;">
+      <button class="btn-primary" type="button" id="btn-dd2dms">Convert to DMS</button>
+      <button type="button" id="btn-clear-dd" title="Clear DD inputs">Clear</button>
+      <button type="button" id="btn-swap" title="Swap lat/lon">Swap</button>
+    </div>
+
+    <div class="copy-wrap">
+      <textarea class="result" id="dms_result" readonly></textarea>
+      <button type="button" class="copy-btn" id="copy-dms">Copy</button>
+    </div>
   </div>
   <!-- /#convert-tab -->
 
-  <!-- History Tab (read-only; starts hidden, JS toggles it) -->
+  <!-- History (read-only) -->
   <div id="history-tab" style="display:none;">
     <p id="history-empty" style="margin:8px 0;">No history yet.</p>
     <table id="history-table" class="table" style="display:none; width:100%;">
@@ -97,15 +132,13 @@
     </table>
   </div>
 
-</div> <!-- /.container -->
+</div>
 
-<!-- Load libs first (XLSX is optional) -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
-<!-- Your app logic (expects the IDs above) -->
-<script src="./assets/js/app.js" defer></script>
+<script src="./assets/js/app.js?v=4" defer></script>
 
+<!-- service worker is fine; comment during dev if caching annoys you -->
 <script>
-  // Service worker (optional; use relative path on GitHub Pages)
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('./service-worker.js');
