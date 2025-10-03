@@ -12,122 +12,193 @@ console.log('app.js loaded');
   }
 })();
 
-// --- Cordify App: Converter, History (read-only), and UI Tabs ---
+// --- Cordify App: true render-swap tabs (Convert | History) ---
 (function() {
-  // --- Constants ---
   const DEFAULT_META = { crs: 'EPSG:4326', precision: 6 };
+  let activeTab = 'convert';
+  let panel;
 
-  // --- Tab Navigation ---
   document.addEventListener('DOMContentLoaded', () => {
-    const convertTab = document.getElementById('convert-tab');
-    const historyTab = document.getElementById('history-tab');
-    const btnConvert = document.getElementById('tab-convert');
-    const btnHistory = document.getElementById('tab-history');
-    if (btnConvert && btnHistory && convertTab && historyTab) {
-      btnConvert.onclick = () => { convertTab.style.display = ''; historyTab.style.display = 'none'; };
-      btnHistory.onclick = () => { convertTab.style.display = 'none'; historyTab.style.display = ''; renderHistoryPanel(); };
-    }
-    // Initial tab
-    if (convertTab) convertTab.style.display = '';
-    if (historyTab) historyTab.style.display = 'none';
+    panel = document.getElementById('panel');
+    document.getElementById('tab-convert')?.addEventListener('click', () => { activeTab='convert'; render(); });
+    document.getElementById('tab-history')?.addEventListener('click', () => { activeTab='history'; render(); });
+    render();
   });
 
-  // --- UI: Render History Panel (read-only) ---
-  function renderHistoryPanel() {
-    const table = document.getElementById('history-table');
-    const tbody = table ? table.querySelector('tbody') : null;
-    const emptyMsg = document.getElementById('history-empty');
-    const filterSel = document.getElementById('history-filter');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    const type = filterSel?.value || 'all';
-    const arr = (window.historyStore?.filterByType(type)) || [];
-    if (!arr.length) {
-      if (emptyMsg) emptyMsg.style.display = '';
-      table.style.display = 'none';
+  function render(){
+    if (!panel) return;
+    panel.replaceChildren(); // unmount everything
+    if (activeTab==='convert') renderConvert();
+    else renderHistory(window.historyStore?.getAll() || []);
+  }
+
+  // Helpers
+  function el(tag, attrs={}, children=[]) {
+    const node = document.createElement(tag);
+    for (const k in attrs) {
+      if (k === 'class') node.className = attrs[k];
+      else if (k === 'style' && typeof attrs[k] === 'object') Object.assign(node.style, attrs[k]);
+      else if (k.startsWith('on') && typeof attrs[k] === 'function') node.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] !== undefined && attrs[k] !== null) node.setAttribute(k, attrs[k]);
+    }
+    (Array.isArray(children)? children: [children]).forEach(c => {
+      if (c === null || c === undefined) return;
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+  function opt(v,l){ return el('option', { value: v }, l ?? v); }
+  function td(n){ return el('td', {}, n); }
+  function trHead(cols){ return el('tr', {}, cols.map(c=>el('th',{},c))); }
+  function code(text){ return el('code', { title: text }, text); }
+
+  // Temporary test hook
+  window.__assertNoInputsOnHistory = () => (activeTab==='history') && document.querySelectorAll('#panel input,#panel select,#panel textarea').length===0;
+
+  // --- Render Convert ---
+  function renderConvert(){
+    // read prefill from sessionStorage if any
+    let prefill = null;
+    try { prefill = JSON.parse(sessionStorage.getItem('convert_prefill')); } catch {}
+    sessionStorage.removeItem('convert_prefill');
+
+    const row1 = el('div',{class:'row'},[
+      el('label',{},['Latitude DMS: ', el('input',{id:'dms_lat_string',type:'text',placeholder:'e.g. 12°34\'56.7\" N or -12 34 56.7'})])
+    ]);
+    const row2 = el('div',{class:'row'},[
+      el('label',{},['Longitude DMS: ', el('input',{id:'dms_lon_string',type:'text',placeholder:'e.g. 77°35\'12\" E or -77 35 12'})])
+    ]);
+    const hr = el('hr',{style:{marginTop:'15px',marginBottom:'15px'}});
+    const dmsLat = el('div',{class:'row'},[
+      el('b',{},'Latitude (Y):'),
+      el('label',{},['° ', el('input',{id:'dms_lat_deg',type:'number',step:'1',placeholder:'deg',min:'0',max:'90'})]),
+      el('label',{},['\' ', el('input',{id:'dms_lat_min',type:'number',step:'1',placeholder:'min',min:'0',max:'59'})]),
+      el('label',{},['" ', el('input',{id:'dms_lat_sec',type:'number',step:'any',placeholder:'sec',min:'0',max:'59.9999'})]),
+      el('select',{id:'dms_lat_dir'},[opt('N'),opt('S')])
+    ]);
+    const dmsLon = el('div',{class:'row'},[
+      el('b',{},'Longitude (X):'),
+      el('label',{},['° ', el('input',{id:'dms_lon_deg',type:'number',step:'1',placeholder:'deg',min:'0',max:'180'})]),
+      el('label',{},['\' ', el('input',{id:'dms_lon_min',type:'number',step:'1',placeholder:'min',min:'0',max:'59'})]),
+      el('label',{},['" ', el('input',{id:'dms_lon_sec',type:'number',step:'any',placeholder:'sec',min:'0',max:'59.9999'})]),
+      el('select',{id:'dms_lon_dir'},[opt('E'),opt('W')])
+    ]);
+    const btnConv = el('button',{type:'button',onclick:()=>convertDmsToDd()},'Convert to DD');
+    const resultRow = el('div',{class:'row',style:{alignItems:'flex-start'}},[
+      el('textarea',{class:'result',id:'dd_result',readOnly:true}),
+      el('button',{id:'copy-dd-btn',type:'button',title:'Copy results',onclick:async()=>{
+        const txt = document.getElementById('dd_result')?.value || ''; if (!txt) return;
+        try { await navigator.clipboard.writeText(txt); } catch {}
+      }},'Copy')
+    ]);
+
+    const hr2 = el('hr');
+    const h4b = el('h4',{},'DD to DMS');
+    const ddLat = el('div',{class:'row'},[
+      el('b',{},'Latitude (Y):'),
+      el('label',{},['DD ', el('input',{id:'dd_lat',type:'number',step:'any',placeholder:'e.g. 12.58242',min:'-90',max:'90'})])
+    ]);
+    const ddLon = el('div',{class:'row'},[
+      el('b',{},'Longitude (X):'),
+      el('label',{},['DD ', el('input',{id:'dd_lon',type:'number',step:'any',placeholder:'e.g. 77.58667',min:'-180',max:'180'})])
+    ]);
+    const btnConv2 = el('button',{type:'button',onclick:()=>convertDdToDms()},'Convert to DMS');
+    const resultRow2 = el('div',{class:'row',style:{alignItems:'flex-start'}},[
+      el('textarea',{class:'result',id:'dms_result',readOnly:true}),
+      el('button',{id:'copy-dms-btn',type:'button',title:'Copy results',onclick:async()=>{
+        const txt = document.getElementById('dms_result')?.value || ''; if (!txt) return;
+        try { await navigator.clipboard.writeText(txt); } catch {}
+      }},'Copy')
+    ]);
+
+    // Prefill after rerun request
+    if (prefill && prefill.type) {
+      if (prefill.type==='DD→DMS') {
+        const mLat = /Lat:\s*([-+]?\d+(?:\.\d+)?)/.exec(prefill.input || '');
+        const mLon = /Lon:\s*([-+]?\d+(?:\.\d+)?)/.exec(prefill.input || '');
+        if (mLat) ddLat.querySelector('input#dd_lat').value = mLat[1];
+        if (mLon) ddLon.querySelector('input#dd_lon').value = mLon[1];
+      } else if (prefill.type==='DMS→DD') {
+        const lines = (prefill.input || '').split(/\n/);
+        const latLine = lines.find(l=>/^Lat:/i.test(l)) || '';
+        const lonLine = lines.find(l=>/^Lon:/i.test(l)) || '';
+        const latStr = latLine.replace(/^Lat:\s*/, '');
+        const lonStr = lonLine.replace(/^Lon:\s*/, '');
+        row1.querySelector('#dms_lat_string').value = latStr;
+        row2.querySelector('#dms_lon_string').value = lonStr;
+      }
+    }
+
+    panel.appendChild(el('h4',{},'DMS to DD'));
+    panel.appendChild(row1);
+    panel.appendChild(row2);
+    panel.appendChild(hr);
+    panel.appendChild(dmsLat);
+    panel.appendChild(dmsLon);
+    panel.appendChild(btnConv);
+    panel.appendChild(resultRow);
+    panel.appendChild(hr2);
+    panel.appendChild(h4b);
+    panel.appendChild(ddLat);
+    panel.appendChild(ddLon);
+    panel.appendChild(btnConv2);
+    panel.appendChild(resultRow2);
+  }
+
+  // --- Render History ---
+  function renderHistory(items){
+    const wrap = el('div',{});
+    const savedType = sessionStorage.getItem('history_filter') || 'all';
+    const controls = el('div',{class:'row',style:{justifyContent:'space-between'}},[
+      el('div',{},[
+        el('label',{for:'history-filter'},'Filter: '),
+        el('select',{id:'history-filter',onchange:(e)=>{
+          sessionStorage.setItem('history_filter', e.target.value);
+          activeTab='history';
+          render();
+        }},[opt('all','All'),opt('DMS→DD'),opt('DD→DMS')])
+      ]),
+      el('div',{},[
+        el('button',{id:'clear-history-btn',type:'button',onclick:()=>{ if (confirm('Clear all?')) { window.historyStore.clear(); render(); } }},'Clear All')
+      ])
+    ]);
+    // set filter value
+    setTimeout(()=>{ const f=document.getElementById('history-filter'); if (f) f.value=savedType; },0);
+
+    const data = (savedType==='all'? items : (window.historyStore.filterByType(savedType)) );
+
+    if (!data.length) {
+      wrap.appendChild(controls);
+      wrap.appendChild(el('div',{id:'history-empty',style:{marginTop:'1em',color:'#888'}},'No history yet.'));
+      panel.appendChild(wrap);
       return;
     }
-    if (emptyMsg) emptyMsg.style.display = 'none';
-    table.style.display = '';
-    arr.forEach((item) => {
-      const tr = document.createElement('tr');
-      const time = new Date(item.ts || item.date || Date.now()).toLocaleString();
-      tr.innerHTML = `
-        <td>${escapeHtml(time)}</td>
-        <td>${item.type || ''}</td>
-        <td><pre style="white-space:pre-wrap;margin:0">${escapeHtml(item.input)}</pre></td>
-        <td><pre style="white-space:pre-wrap;margin:0">${escapeHtml(item.output || item.result || '')}</pre></td>
-        <td>
-          <button type="button" class="h-copy-in" data-id="${item.id}">Copy In</button>
-          <button type="button" class="h-copy-out" data-id="${item.id}">Copy Out</button>
-          <button type="button" class="h-rerun" data-id="${item.id}">Re-run</button>
-          <button type="button" class="h-del" data-id="${item.id}">Delete</button>
-        </td>
-      `;
+
+    const table = el('table',{id:'history-table',border:'1',style:{width:'100%','borderCollapse':'collapse'}},[
+      el('thead',{},[trHead(['Time','Type','Input','Output','Actions'])]),
+      el('tbody',{})
+    ]);
+    const tbody = table.querySelector('tbody');
+
+    data.forEach(rec => {
+      const tr = el('tr',{},[
+        td(new Date(rec.ts || Date.now()).toLocaleString()),
+        td(rec.type || ''),
+        td(code(rec.input || '')),
+        td(code(rec.output || '')),
+        td(el('div',{},[
+          el('button',{type:'button',onclick:async()=>{ try{ await navigator.clipboard.writeText(rec.input||''); }catch{} }},'Copy In'),
+          el('button',{type:'button',onclick:async()=>{ try{ await navigator.clipboard.writeText(rec.output||''); }catch{} }},'Copy Out'),
+          el('button',{type:'button',onclick:()=>{ hydrateConverterFromHistory(rec); activeTab='convert'; render(); }},'Re-run'),
+          el('button',{type:'button',onclick:()=>{ window.historyStore.remove(rec.id); render(); }},'Delete')
+        ]))
+      ]);
       tbody.appendChild(tr);
     });
+    wrap.appendChild(controls);
+    wrap.appendChild(table);
+    panel.appendChild(wrap);
   }
-
-  // --- Escape HTML for safe rendering ---
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
-  }
-
-  // --- Clear History Button ---
-  document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.getElementById('clear-history-btn');
-    if (btn) {
-      btn.onclick = () => {
-        if (confirm('Clear all conversion history?')) {
-          clearHistory();
-          renderHistoryTable();
-        }
-      };
-    }
-    // Copy buttons
-    const copyDd = document.getElementById('copy-dd-btn');
-    const copyDms = document.getElementById('copy-dms-btn');
-    copyDd && (copyDd.onclick = async () => {
-      const txt = document.getElementById('dd_result')?.value || '';
-      if (!txt) return;
-      try { await navigator.clipboard.writeText(txt); copyDd.textContent = 'Copied'; setTimeout(()=>copyDd.textContent='Copy',1000); } catch {}
-    });
-    copyDms && (copyDms.onclick = async () => {
-      const txt = document.getElementById('dms_result')?.value || '';
-      if (!txt) return;
-      try { await navigator.clipboard.writeText(txt); copyDms.textContent = 'Copied'; setTimeout(()=>copyDms.textContent='Copy',1000); } catch {}
-    });
-  });
-
-  // --- History actions and filter ---
-  document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('history-filter')?.addEventListener('change', () => renderHistoryPanel());
-    document.getElementById('history-table')?.addEventListener('click', async (e) => {
-      const id = e.target.dataset?.id;
-      if (!id) return;
-      if (e.target.classList.contains('h-copy-in')) {
-        const rec = window.historyStore?.getById(id); if (!rec) return;
-        await navigator.clipboard.writeText(rec.input || '');
-      } else if (e.target.classList.contains('h-copy-out')) {
-        const rec = window.historyStore?.getById(id); if (!rec) return;
-        await navigator.clipboard.writeText(rec.output || rec.result || '');
-      } else if (e.target.classList.contains('h-rerun')) {
-        const rec = window.historyStore?.getById(id); if (!rec) return;
-        hydrateConverterFromHistory(rec);
-        // switch to converter tab
-        document.getElementById('tab-convert')?.click();
-      } else if (e.target.classList.contains('h-del')) {
-        window.historyStore?.remove(id);
-        renderHistoryPanel();
-      }
-    });
-  });
-
-  // (Export functionality removed per new read-only History requirements)
-
-  // --- Hook into conversions to store history ---
-  // expose render to refresh panel
-  window._cordify_renderHistory = renderHistoryPanel;
 })();
 
 // ...existing code...
@@ -202,27 +273,9 @@ function ddToDms(dd, latlon) {
 function inLatRange(v) { return v >= -90 && v <= 90; }
 function inLonRange(v) { return v >= -180 && v <= 180; }
 
-// Hydrate converter form based on saved history record
+// Store prefill in sessionStorage; renderConvert reads it
 function hydrateConverterFromHistory(rec) {
-  if (!rec || !rec.type) return;
-  if (rec.type === 'DD→DMS') {
-    // parse input like: "Lat: 12.34\nLon: 56.78"
-    const mLat = /Lat:\s*([-+]?\d+(?:\.\d+)?)/.exec(rec.input || '');
-    const mLon = /Lon:\s*([-+]?\d+(?:\.\d+)?)/.exec(rec.input || '');
-    if (mLat) document.getElementById('dd_lat').value = mLat[1];
-    if (mLon) document.getElementById('dd_lon').value = mLon[1];
-  } else if (rec.type === 'DMS→DD') {
-    // Attempt to repopulate the single-string inputs for convenience if present
-    const lines = (rec.input || '').split(/\n/);
-    const latLine = lines.find(l=>/^Lat:/i.test(l)) || '';
-    const lonLine = lines.find(l=>/^Lon:/i.test(l)) || '';
-    const latStr = latLine.replace(/^Lat:\s*/, '');
-    const lonStr = lonLine.replace(/^Lon:\s*/, '');
-    const latEl = document.getElementById('dms_lat_string');
-    const lonEl = document.getElementById('dms_lon_string');
-    if (latEl) latEl.value = latStr;
-    if (lonEl) lonEl.value = lonStr;
-  }
+  try { sessionStorage.setItem('convert_prefill', JSON.stringify(rec)); } catch {}
 }
 
 function convertDmsToDd() {
