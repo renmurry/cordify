@@ -13,12 +13,15 @@
 <body>
 <div class="container">
 
+  <!-- TABS: add History button -->
   <nav style="margin-bottom: 1em;">
     <button id="tab-convert" class="tab-btn" type="button">Conversion</button>
+    <button id="tab-history" class="tab-btn" type="button">History</button>
   </nav>
+
   <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
 
-  <!-- Conversion Tab -->
+  <!-- Conversion Tab (ALL conversion UI stays inside this one container) -->
   <div id="convert-tab">
     <h4>DMS to DD</h4>
 
@@ -58,43 +61,56 @@
       </select>
     </div>
 
-    
     <button type="button" onclick="convertDmsToDd()">Convert to DD</button>
     <textarea class="result" id="dd_result" readonly></textarea>
+
+    <hr>
+
+    <!-- DD to DMS (kept INSIDE convert-tab now) -->
+    <h4>DD to DMS</h4>
+    <div class="row">
+      <b>Latitude (Y):</b>
+      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242"></label>
+    </div>
+    <div class="row">
+      <b>Longitude (X):</b>
+      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667"></label>
+    </div>
+    <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
+    <textarea class="result" id="dms_result" readonly></textarea>
+  </div>
+  <!-- /#convert-tab -->
+
+  <!-- History Tab (read-only; starts hidden, JS toggles it) -->
+  <div id="history-tab" style="display:none;">
+    <p id="history-empty" style="margin:8px 0;">No history yet.</p>
+    <table id="history-table" class="table" style="display:none; width:100%;">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Input</th>
+          <th>Result</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 
-  <hr>
+</div> <!-- /.container -->
 
-  <!-- DD to DMS (moved inside convert-tab) -->
-  <h4>DD to DMS</h4>
-  <div class="row">
-    <b>Latitude (Y):</b>
-    <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242"></label>
-  </div>
-  <div class="row">
-    <b>Longitude (X):</b>
-    <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667"></label>
-  </div>
-  <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
-  <textarea class="result" id="dms_result" readonly></textarea>
-  </div>
-
+<!-- Load libs first (XLSX is optional) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
+<!-- Your app logic (expects the IDs above) -->
 <script src="./assets/js/app.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js"></script>
-</body>
-</body>
+
 <script>
+  // Service worker (optional; use relative path on GitHub Pages)
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
-      navigator.serviceWorker.register('/service-worker.js')
-        .then(function(registration) {
-          // Registration successful
-        }, function(err) {
-          // Registration failed
-        });
+      navigator.serviceWorker.register('./service-worker.js');
     });
   }
 </script>
-</html>
 </body>
 </html>
