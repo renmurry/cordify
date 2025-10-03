@@ -326,7 +326,7 @@ function convertDmsToDd() {
 
   const precision = DEFAULT_META.precision;
   const ddText = `Latitude (Y): ${dd_lat.toFixed(precision)}\nLongitude (X): ${dd_lon.toFixed(precision)}`;
-  document.getElementById('dd_result').value = ddText;
+  setResult('dd_result', ddText);
 
   const inputSummary = latStr
     ? `Lat: ${latStr}\n`
@@ -337,7 +337,6 @@ function convertDmsToDd() {
 
   const resultSummary = `Lat: ${dd_lat.toFixed(precision)}\nLon: ${dd_lon.toFixed(precision)}`;
   window.historyStore?.add({ type: 'DMS→DD', input: inputSummary + inputSummary2, output: resultSummary, meta: { ...DEFAULT_META } });
-  if (document.getElementById('history-tab')?.style.display !== 'none') window._cordify_renderHistory && window._cordify_renderHistory();
 }
 
 function convertDdToDms() {
@@ -353,9 +352,8 @@ function convertDdToDms() {
 
   inputSummary = `Lat: ${dd_lat}\nLon: ${dd_lon}`;
   resultSummary = `Lat: ${dms_lat}\nLon: ${dms_lon}`;
-  document.getElementById('dms_result').value = `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`;
+  setResult('dms_result', `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`);
 
   // Store in history
   window.historyStore?.add({ type: 'DD→DMS', input: inputSummary, output: resultSummary, meta: { ...DEFAULT_META } });
-  if (document.getElementById('history-tab')?.style.display !== 'none') window._cordify_renderHistory && window._cordify_renderHistory();
 }
