@@ -4,7 +4,6 @@ console.log('app.js loaded');
 // --- Cordify App: Conversion History, Export, and UI Tabs ---
 (function() {
   // --- Constants ---
-  const HISTORY_KEY = 'cordify_history';
   const MAX_HISTORY = 1000; // limit for localStorage
 
   // --- Tab Navigation ---
@@ -21,27 +20,6 @@ console.log('app.js loaded');
     if (convertTab) convertTab.style.display = '';
     if (historyTab) historyTab.style.display = 'none';
   });
-
-  // --- History Storage ---
-  function getHistory() {
-    try {
-      const arr = JSON.parse(localStorage.getItem(HISTORY_KEY));
-      return Array.isArray(arr) ? arr : [];
-    } catch (e) { return []; }
-  }
-  function saveHistory(arr) {
-    try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(-MAX_HISTORY)));
-    } catch (e) { /* handle quota exceeded */ }
-  }
-  function addHistory(entry) {
-    const arr = getHistory();
-    arr.push(entry);
-    saveHistory(arr);
-  }
-  function clearHistory() {
-    localStorage.removeItem(HISTORY_KEY);
-  }
 
   // --- UI: Render History Table ---
   function renderHistoryTable() {
@@ -172,8 +150,6 @@ console.log('app.js loaded');
   window._cordify_addHistory = addHistory;
   window._cordify_renderHistory = renderHistoryTable;
 })();
-
-// ...existing code...
 
 // ---- Robust DMS string parser ----
 // Supports: symbols/spaces, , as decimal, signed degrees, leading/trailing NSEW,

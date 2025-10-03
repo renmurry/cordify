@@ -15,7 +15,6 @@
 
   <nav style="margin-bottom: 1em;">
     <button id="tab-convert" class="tab-btn" type="button">Conversion</button>
-    <button id="tab-history" class="tab-btn" type="button">History</button>
   </nav>
   <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
 
@@ -79,23 +78,6 @@
   <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
   <textarea class="result" id="dms_result" readonly></textarea>
   </div>
-
-  <!-- History Tab -->
-  <div id="history-tab" style="display:none">
-    <h4>Conversion History</h4>
-    <table id="history-table" border="1" style="width:100%;border-collapse:collapse">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Input</th>
-          <th>Result</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <div id="history-empty" style="margin-top:1em;color:#888;display:none">No history yet.</div>
-  </div>
-
 
 <script src="./assets/js/app.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js"></script>
