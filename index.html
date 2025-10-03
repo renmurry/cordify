@@ -17,17 +17,116 @@
 </head>
 <body>
 <div class="container">
-  <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
-  <p style="margin-top:-4px;color:#666">Note: Latitude = Y, Longitude = X</p>
-  <nav class="tabs" style="margin-bottom:1em">
-    <button id="tab-convert" data-tab="convert" type="button">Convert</button>
-    <button id="tab-history" data-tab="history" type="button">History</button>
+
+  <nav style="margin-bottom: 1em;">
+    <button id="tab-convert" class="tab-btn" type="button">Convert</button>
+    <button id="tab-history" class="tab-btn" type="button">History</button>
   </nav>
-  <div id="panel"></div>
+  <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
+
+  <!-- Conversion Tab -->
+  <div id="convert-tab">
+    <h4>DMS to DD</h4>
+
+    <!-- Single-string DMS inputs -->
+    <div class="row">
+      <label>Latitude DMS:
+        <input id="dms_lat_string" type="text" placeholder='e.g. 12°34&#39;56.7&quot; N or -12 34 56.7'>
+      </label>
+    </div>
+    <div class="row">
+      <label>Longitude DMS:
+        <input id="dms_lon_string" type="text" placeholder='e.g. 77°35&#39;12&quot; E or -77 35 12'>
+      </label>
+    </div>
+
+    <hr style="margin-top:15px; margin-bottom:15px;">
+
+    <!-- Separate D/M/S inputs (optional alternative) -->
+    <div class="row">
+      <b>Latitude (Y):</b>
+      <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg"></label>
+      <label>' <input id="dms_lat_min" type="number" step="1" placeholder="min"></label>
+      <label>" <input id="dms_lat_sec" type="number" step="any" placeholder="sec"></label>
+      <select id="dms_lat_dir">
+        <option value="N">N</option>
+        <option value="S">S</option>
+      </select>
+    </div>
+    <div class="row">
+      <b>Longitude (X):</b>
+      <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg"></label>
+      <label>' <input id="dms_lon_min" type="number" step="1" placeholder="min"></label>
+      <label>" <input id="dms_lon_sec" type="number" step="any" placeholder="sec"></label>
+      <select id="dms_lon_dir">
+        <option value="E">E</option>
+        <option value="W">W</option>
+      </select>
+    </div>
+
+    
+    <button type="button" onclick="convertDmsToDd()">Convert to DD</button>
+    <textarea class="result" id="dd_result" readonly></textarea>
+  </div>
+
+  <hr>
+
+  <!-- DD to DMS -->
+  <div>
+    <h4>DD to DMS</h4>
+    <div class="row">
+      <b>Latitude (Y):</b>
+      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242"></label>
+    </div>
+    <div class="row">
+      <b>Longitude (X):</b>
+      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667"></label>
+    </div>
+    <button type="button" onclick="convertDdToDms()">Convert to DMS</button>
+    <textarea class="result" id="dms_result" readonly></textarea>
+
+    <!-- History Tab -->
+    <div id="history-tab" style="display:none">
+      <h4>Conversion History</h4>
+      <div style="margin-bottom:0.5em">
+        <button id="clear-history-btn" type="button">Clear History</button>
+        <button id="export-history-xlsx" type="button">Export All (Excel)</button>
+        <button id="export-history-csv" type="button">Export All (CSV)</button>
+      </div>
+      <table id="history-table" border="1" style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Type</th>
+            <th>Input</th>
+            <th>Result</th>
+            <th>Date</th>
+            <th>Export</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div id="history-empty" style="margin-top:1em;color:#888;display:none">No history yet.</div>
+    </div>
 </div>
 
 
-<script src="./assets/js/historyStore.js" defer></script>
 <script src="./assets/js/app.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js"></script>
+</body>
+</body>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(function(registration) {
+          // Registration successful
+        }, function(err) {
+          // Registration failed
+        });
+    });
+  }
+</script>
+</html>
 </body>
 </html>

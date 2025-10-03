@@ -2,11 +2,10 @@
   "name": "Cordify",
   "short_name": "Cordify",
   "start_url": ".",
-  "scope": ".",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#4a90e2",
-  "description": "Convert coordinates between DMS and DD with offline support.",
+  "description": "Cordify - Your app, now as a PWA!",
   "icons": [
     {
       "src": "favicon.ico",
