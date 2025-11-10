@@ -179,7 +179,14 @@
 
   <!-- History (read-only) -->
   <div id="history-tab" style="display:none;">
-    <p id="history-empty" style="margin:8px 0;">No history yet.</p>
+    <div style="margin:8px 0; display:flex; gap:8px; align-items:center;">
+      <p id="history-empty" style="margin:0;">No history yet.</p>
+      <div style="margin-left:auto;">
+        <button id="history-export-json" type="button">Export All (JSON)</button>
+        <button id="history-clear" type="button">Clear History</button>
+        <button id="history-migrate" type="button">Migrate Legacy</button>
+      </div>
+    </div>
     <table id="history-table" class="table" style="display:none; width:100%;">
       <thead>
         <tr>
@@ -187,6 +194,7 @@
           <th>Input</th>
           <th>Result</th>
           <th>Date</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -196,6 +204,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
+<script src="./assets/js/historyStore.js" defer></script>
 <script src="./assets/js/app.js?v=6" defer></script>
 
 <script>

@@ -21,12 +21,21 @@
     arr.unshift({ type: rec.type || "", input: String(rec.input ?? ""), result: String(rec.result ?? ""), date: rec.date || Date.now() });
     _fallback_setHistory(arr);
   }
+  function _fallback_removeByIndex(idx) {
+    try {
+      const arr = _fallback_getHistory();
+      if (typeof idx !== 'number' || idx < 0 || idx >= arr.length) return false;
+      arr.splice(idx, 1);
+      _fallback_setHistory(arr);
+      return true;
+    } catch { return false; }
+  }
   function _fallback_clearHistory() { try { localStorage.removeItem(OLD_KEY); } catch {} }
 
   function getHistory() {
     if (window.historyStore && typeof window.historyStore.getAll === 'function') {
       // historyStore returns newest-first already
-      return window.historyStore.getAll().map(r => ({ type: r.type || '', input: r.input || '', result: r.output || r.result || '', date: r.date || r.ts || r.ts }));
+      return window.historyStore.getAll().map(r => ({ id: r.id, ts: r.ts || r.date, type: r.type || '', input: r.input || '', result: r.output || r.result || '', date: r.date || r.ts || r.ts }));
     }
     return _fallback_getHistory();
   }
@@ -39,6 +48,24 @@
   function clearHistory() {
     if (window.historyStore && typeof window.historyStore.clear === 'function') { try { window.historyStore.clear(); return; } catch(e) {} }
     _fallback_clearHistory();
+  }
+
+  function removeHistoryAt(indexOrId) {
+    // if id (string) and historyStore available, remove by id
+    if (window.historyStore && typeof window.historyStore.remove === 'function' && typeof indexOrId === 'string') {
+      try { return window.historyStore.remove(indexOrId); } catch(e) { /* fallthrough */ }
+    }
+    // if numeric index, try remove from store by index -> map to id
+    if (window.historyStore && typeof window.historyStore.getAll === 'function' && typeof indexOrId === 'number') {
+      try {
+        const arr = window.historyStore.getAll();
+        const rec = arr[indexOrId];
+        if (rec && rec.id) return window.historyStore.remove(rec.id);
+      } catch(e) {}
+    }
+    // fallback: remove by index from legacy storage
+    if (typeof indexOrId === 'number') return _fallback_removeByIndex(indexOrId);
+    return false;
   }
 
   // migrate legacy v1 -> historyStore if present
@@ -153,6 +180,20 @@
     document.getElementById("batch-run")?.addEventListener("click", runBatch);
     document.getElementById("batch-download-xlsx")?.addEventListener("click", () => downloadBatch("xlsx"));
     document.getElementById("batch-download-csv")?.addEventListener("click", () => downloadBatch("csv"));
+    // history UI buttons
+    document.getElementById('history-export-json')?.addEventListener('click', () => {
+      try {
+        const json = (window.historyStore && typeof window.historyStore.exportAll === 'function') ? window.historyStore.exportAll() : JSON.stringify(getHistory());
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'cordify_history.json'; document.body.appendChild(a); a.click(); setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 150);
+      } catch(e) { alert('Export failed'); }
+    });
+    document.getElementById('history-clear')?.addEventListener('click', () => {
+      if (!confirm('Clear all history?')) return;
+      clearHistory(); renderHistoryTable();
+    });
+    document.getElementById('history-migrate')?.addEventListener('click', () => { migrateHistoryToStore(); alert('Migration started (check console for errors).'); });
   });
 
   function persistInputs() {
@@ -188,7 +229,28 @@
         <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.input)}">${escapeHtml(item.input)}</pre></td>
         <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.result)}">${escapeHtml(item.result)}</pre></td>
         <td>${item.date ? new Date(item.date).toLocaleString() : ""}</td>
+        <td></td>
       `;
+      // actions
+      const actionsTd = tr.querySelector('td:last-child');
+      const exportBtn = document.createElement('button'); exportBtn.type = 'button'; exportBtn.textContent = 'Export'; exportBtn.className='small';
+      exportBtn.addEventListener('click', () => {
+        try { window._cordify_exportHistory && window._cordify_exportHistory('csv', i); } catch(e) { console.error(e); }
+      });
+      const delBtn = document.createElement('button'); delBtn.type = 'button'; delBtn.textContent = 'Delete'; delBtn.className='small';
+      delBtn.addEventListener('click', () => {
+        const ok = confirm('Delete this history item?');
+        if (!ok) return;
+        const success = removeHistoryAt(item.id ?? i);
+        if (success) {
+          renderHistoryTable();
+        } else {
+          alert('Failed to remove history item.');
+        }
+      });
+      actionsTd.appendChild(exportBtn);
+      actionsTd.appendChild(document.createTextNode(' '));
+      actionsTd.appendChild(delBtn);
       tbody.appendChild(tr);
     });
   }
