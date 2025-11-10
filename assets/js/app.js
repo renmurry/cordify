@@ -95,7 +95,7 @@
 
   // expose for converters
   window._cordify_addHistory = addHistory;
-  window._cordify_renderHistory = renderHistoryTable;
+  // window._cordify_renderHistory will be assigned after renderHistoryTable is defined
 
   // ---------- tabs + ui ----------
   document.addEventListener("DOMContentLoaded", () => {
@@ -295,6 +295,9 @@
     });
   }
 
+      // expose render renderer after function is defined
+      window._cordify_renderHistory = renderHistoryTable;
+
   // ---------- helpers ----------
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -328,12 +331,16 @@
     }));
 
     if (type === "xlsx") {
-      try {
-        const ws = XLSX.utils.json_to_sheet(exportArr);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "History");
-        XLSX.writeFile(wb, rowIdx !== undefined ? `cordify_conversion_${rowIdx+1}.xlsx` : "cordify_history.xlsx");
-      } catch { alert("Excel export failed."); }
+      if (typeof XLSX === 'undefined') {
+        alert('Excel export requires the XLSX library (sheetjs). Please include it in index.html.');
+      } else {
+        try {
+          const ws = XLSX.utils.json_to_sheet(exportArr);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "History");
+          XLSX.writeFile(wb, rowIdx !== undefined ? `cordify_conversion_${rowIdx+1}.xlsx` : "cordify_history.xlsx");
+        } catch { alert("Excel export failed."); }
+      }
     } else if (type === "csv") {
       try {
         const csv = toCsv(exportArr);
@@ -529,8 +536,11 @@ async function handleBatchFile(e) {
   const file = e.target.files?.[0];
   resetBatchUI();
   if (!file) return;
-
   try {
+    if (typeof XLSX === 'undefined') {
+      showFeedback('Batch import requires the XLSX library (sheetjs). Batch features are disabled.', 'error');
+      return;
+    }
     const data = await file.arrayBuffer();
     // XLSX reads both Excel and CSV
     const wb = XLSX.read(data, { type: "array" });
@@ -545,7 +555,7 @@ async function handleBatchFile(e) {
     populateMapping(_batch.headers);
     document.getElementById("batch-mapping").style.display = "";
     document.getElementById("batch-actions").style.display = "";
-    document.getElementById("batch-status").textContent = `Loaded ${json.length} rows from “${sheetName}”`;
+    document.getElementById("batch-status").textContent = `Loaded ${json.length} rows from "${sheetName}"`;
   } catch (err) {
     document.getElementById("batch-status").textContent = "Failed to read file.";
   }
@@ -656,11 +666,13 @@ function renderBatchPreview(rows, headers) {
 function downloadBatch(type) {
   if (!_batch.outRows.length) return;
   if (type === "xlsx") {
+    if (typeof XLSX === 'undefined') { alert('Excel export requires the XLSX library (sheetjs).'); return; }
     const ws = XLSX.utils.json_to_sheet(_batch.outRows, { header: _batch.outHeaders });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Converted");
     XLSX.writeFile(wb, "cordify_converted.xlsx");
   } else {
+    if (typeof XLSX === 'undefined') { alert('CSV export requires the XLSX utils (sheetjs).'); return; }
     const ws = XLSX.utils.json_to_sheet(_batch.outRows, { header: _batch.outHeaders });
     const csv = XLSX.utils.sheet_to_csv(ws);
     const blob = new Blob([csv], { type: "text/csv" });
