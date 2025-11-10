@@ -194,38 +194,33 @@
       clearHistory(); renderHistoryTable();
     });
     document.getElementById('history-migrate')?.addEventListener('click', () => { migrateHistoryToStore(); alert('Migration started (check console for errors).'); });
-  // Tab navigation
+  // Tab navigation: show map tab and init map lazily
   document.getElementById('tab-map')?.addEventListener('click', () => {
     document.getElementById('convert-tab').style.display = 'none';
     document.getElementById('history-tab').style.display = 'none';
     document.getElementById('map-tab').style.display = '';
-    
+
     // Initialize map when tab is shown
     initMap();
-    setTimeout(() => map?.invalidateSize(), 100);
+    setTimeout(() => _map?.invalidateSize?.(), 100);
   });
 
-  // Map controls
-  document.getElementById('map-plot-all')?.addEventListener('click', () => { 
-    const n = plotAllHistory(); 
-    if (n > 0) {
-      showFeedback(`Plotted ${n} points on the map`, 'success');
-    }
+  // Map controls (wired once)
+  document.getElementById('map-plot-all')?.addEventListener('click', () => {
+    const n = plotAllHistory();
+    if (n > 0) showFeedback(`Plotted ${n} points on the map`, 'success');
+    else showFeedback('No valid points to plot', 'info');
   });
-  
-  document.getElementById('map-clear')?.addEventListener('click', () => { 
+
+  document.getElementById('map-clear')?.addEventListener('click', () => {
     clearMap();
     showFeedback('Map cleared', 'info');
   });
-  
+
+  // Export buttons (single wiring)
   document.getElementById('export-geojson')?.addEventListener('click', () => exportHistoryAsGeoJSON('cordify_history.geojson'));
   document.getElementById('export-kml')?.addEventListener('click', () => exportHistoryAsKml('cordify_history.kml'));
   document.getElementById('export-kmz')?.addEventListener('click', () => exportHistoryAsKmz('cordify_history.kmz'));
-  document.getElementById('export-kml')?.addEventListener('click', () => { exportHistoryAsKml('cordify_history.kml'); });
-  document.getElementById('export-kmz')?.addEventListener('click', () => { exportHistoryAsKmz('cordify_history.kmz'); });
-  document.getElementById('export-kml')?.addEventListener('click', () => { exportHistoryAsKml('cordify_history.kml'); });
-  document.getElementById('export-kmz')?.addEventListener('click', () => { exportHistoryAsKmz('cordify_history.kmz'); });
-  });
 
   function persistInputs() {
     const keys = ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec","dd_lat","dd_lon"];
@@ -685,10 +680,10 @@ function showFeedback(message, type = 'info') {
   const feedback = document.createElement('div');
   feedback.className = `feedback feedback-${type}`;
   feedback.textContent = message;
-  
+
   document.body.appendChild(feedback);
   requestAnimationFrame(() => feedback.classList.add('show'));
-  
+
   setTimeout(() => {
     feedback.classList.remove('show');
     setTimeout(() => feedback.remove(), 300);
@@ -710,7 +705,7 @@ function initMap(){
     _mapLayerGroup = L.layerGroup().addTo(_map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_map);
     return true;
-  } catch(e){ 
+  } catch(e){
     console.error('Leaflet init failed:', e);
     _map = null;
     _mapLayerGroup = null;
@@ -729,7 +724,7 @@ function showOnMap(lat, lon, label) {
 
   try {
     const key = `${lat}:${lon}`;
-    if (_mapMarkers[key]) { 
+    if (_mapMarkers[key]) {
       _mapMarkers[key].openPopup();
       _map.setView([lat, lon], Math.max(13, _map.getZoom()));
       return _mapMarkers[key];
@@ -739,12 +734,12 @@ function showOnMap(lat, lon, label) {
     m.bindPopup(label || `${lat}, ${lon}`);
     m.addTo(_mapLayerGroup);
     _mapMarkers[key] = m;
-    
+
     // Zoom to new marker
     _map.setView([lat, lon], 13);
     m.openPopup();
     return m;
-  } catch(e) { 
+  } catch(e) {
     console.error('showOnMap failed:', e);
     showFeedback('Failed to show point on map', 'error');
     return null;
@@ -784,7 +779,7 @@ function showCurrentInMap(type) {
 
   // Switch to map tab
   document.getElementById('tab-map').click();
-  
+
   // Plot point
   const [lat, lon] = coords;
   showOnMap(lat, lon, `Current Result: ${resultEl.value}`);
@@ -797,7 +792,7 @@ function showHistoryItemOnMap(idOrIndex) {
   }
   if (!rec) {
     const h = getHistory();
-    if (typeof idOrIndex === 'number') rec = h[idOrIndex]; 
+    if (typeof idOrIndex === 'number') rec = h[idOrIndex];
     else rec = h.find(r => r.id === idOrIndex) || null;
   }
   if (!rec) {
@@ -807,7 +802,7 @@ function showHistoryItemOnMap(idOrIndex) {
 
   // Switch to map tab
   document.getElementById('tab-map').click();
-  
+
   // Parse and plot
   const s = rec.result || rec.output || '';
   const coords = parseLatLngFromOutput(s);
@@ -815,7 +810,7 @@ function showHistoryItemOnMap(idOrIndex) {
     showFeedback('Could not parse coordinates from history item', 'error');
     return;
   }
-  
+
   const [lat, lon] = coords;
   showOnMap(lat, lon, `${rec.type || ''} — ${rec.input}`);
 }
@@ -848,9 +843,9 @@ function plotAllHistory(){
     needsFit = true;
     count++;
 
-    if (count > 5000) { 
-      alert('Too many points — plotting stopped at 5000.'); 
-      break; 
+    if (count > 5000) {
+      alert('Too many points — plotting stopped at 5000.');
+      break;
     }
   }
 
@@ -934,3 +929,4 @@ async function exportHistoryAsKmz(filename='history.kmz'){
   downloadBlob(filename, content);
 }
 /* ====================== END BATCH ====================== */
+})();
