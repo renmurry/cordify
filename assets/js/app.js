@@ -200,6 +200,8 @@
   document.getElementById('export-geojson')?.addEventListener('click', () => { const crs = document.getElementById('map-crs')?.value || 'EPSG:4326'; exportHistoryAsGeoJSON('cordify_history.geojson', crs); });
   document.getElementById('export-kml')?.addEventListener('click', () => { exportHistoryAsKml('cordify_history.kml'); });
   document.getElementById('export-kmz')?.addEventListener('click', () => { exportHistoryAsKmz('cordify_history.kmz'); });
+  document.getElementById('export-kml')?.addEventListener('click', () => { exportHistoryAsKml('cordify_history.kml'); });
+  document.getElementById('export-kmz')?.addEventListener('click', () => { exportHistoryAsKmz('cordify_history.kmz'); });
   });
 
   function persistInputs() {
@@ -658,14 +660,21 @@ let _mapMarkers = {};
 let _mapLayerGroup = null;
 
 function initMap(){
-  if (_map || typeof L === 'undefined') return;
+  if (_map) return true;
+  if (typeof L === 'undefined') { console.warn('Leaflet not loaded'); return false; }
   const el = document.getElementById('map');
-  if (!el) return;
+  if (!el) { console.warn('Map element not found'); return false; }
   try {
     _map = L.map(el, { attributionControl: true }).setView([0,0], 2);
     _mapLayerGroup = L.layerGroup().addTo(_map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_map);
-  } catch(e){ console.warn('Leaflet init failed', e); }
+    return true;
+  } catch(e){ 
+    console.error('Leaflet init failed:', e);
+    _map = null;
+    _mapLayerGroup = null;
+    return false;
+  }
 }
 
 function clearMap(){
@@ -727,17 +736,51 @@ function showHistoryItemOnMap(idOrIndex){
 }
 
 function plotAllHistory(){
-  initMap();
+  if (!initMap()) {
+    alert('Map initialization failed');
+    return 0;
+  }
   clearMap();
   const items = getHistory();
   let count = 0;
+  const bounds = L.latLngBounds();
+  let needsFit = false;
+
+  // Batch markers for better performance
+  const batch = [];
   for (const it of items){
     const s = it.result || it.output || '';
     const coords = parseLatLngFromOutput(s);
     if (!coords) continue;
     const [lat, lon] = coords;
-    try { showOnMap(lat, lon, `${it.type || ''} — ${it.input}`); count++; } catch(e){}
-    if (count > 5000) { alert('Too many points — plotting stopped at 5000.'); break; }
+    if (!isFinite(lat) || !isFinite(lon)) continue;
+
+    batch.push({
+      latlng: [lat, lon],
+      label: `${it.type || ''} — ${it.input}`
+    });
+    bounds.extend([lat, lon]);
+    needsFit = true;
+    count++;
+
+    if (count > 5000) { 
+      alert('Too many points — plotting stopped at 5000.'); 
+      break; 
+    }
+  }
+
+  // Add markers in batches of 100 for smoother UI
+  for (let i = 0; i < batch.length; i += 100) {
+    const chunk = batch.slice(i, i + 100);
+    setTimeout(() => {
+      chunk.forEach(({latlng, label}) => {
+        try { showOnMap(latlng[0], latlng[1], label); } catch(e){}
+      });
+      // Only fit bounds after the last batch
+      if (needsFit && i >= batch.length - 100) {
+        try { _map.fitBounds(bounds, { padding: [20, 20] }); } catch(e){}
+      }
+    }, Math.floor(i / 100) * 50); // 50ms delay between batches
   }
   return count;
 }
