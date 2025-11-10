@@ -1,35 +1,70 @@
 // scripts for cordify
-console.log("app.js loaded");
 
 /* --------------------------------------------------------------------------
    Cordify: tabs + history-only view + robust storage + batch I/O
 --------------------------------------------------------------------------- */
 (function () {
   const MAX_HISTORY = 1000;
-  const LS_KEY = "cordify_history_v1";
+  const OLD_KEY = "cordify_history_v1";
 
-  // ---------- storage ----------
-  function getHistory() {
+  // ---------- storage (prefer window.historyStore when available) ----------
+  function _fallback_getHistory() {
     try {
-      const raw = localStorage.getItem(LS_KEY);
+      const raw = localStorage.getItem(OLD_KEY);
       const arr = raw ? JSON.parse(raw) : [];
       return Array.isArray(arr) ? arr : [];
     } catch { return []; }
   }
-  function setHistory(arr) {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(arr.slice(0, MAX_HISTORY))); } catch {}
+  function _fallback_setHistory(arr) { try { localStorage.setItem(OLD_KEY, JSON.stringify(arr.slice(0, MAX_HISTORY))); } catch {} }
+  function _fallback_addHistory(rec) {
+    const arr = _fallback_getHistory();
+    arr.unshift({ type: rec.type || "", input: String(rec.input ?? ""), result: String(rec.result ?? ""), date: rec.date || Date.now() });
+    _fallback_setHistory(arr);
+  }
+  function _fallback_clearHistory() { try { localStorage.removeItem(OLD_KEY); } catch {} }
+
+  function getHistory() {
+    if (window.historyStore && typeof window.historyStore.getAll === 'function') {
+      // historyStore returns newest-first already
+      return window.historyStore.getAll().map(r => ({ type: r.type || '', input: r.input || '', result: r.output || r.result || '', date: r.date || r.ts || r.ts }));
+    }
+    return _fallback_getHistory();
   }
   function addHistory(rec) {
-    const arr = getHistory();
-    arr.unshift({
-      type: rec.type || "",
-      input: String(rec.input ?? ""),
-      result: String(rec.result ?? ""),
-      date: rec.date || Date.now(),
-    });
-    setHistory(arr);
+    if (window.historyStore && typeof window.historyStore.add === 'function') {
+      try { window.historyStore.add({ type: rec.type, input: String(rec.input ?? ''), output: String(rec.result ?? ''), date: rec.date, meta: rec.meta || {} }); return; } catch(e) { /* fallthrough */ }
+    }
+    _fallback_addHistory(rec);
   }
-  function clearHistory() { try { localStorage.removeItem(LS_KEY); } catch {} }
+  function clearHistory() {
+    if (window.historyStore && typeof window.historyStore.clear === 'function') { try { window.historyStore.clear(); return; } catch(e) {} }
+    _fallback_clearHistory();
+  }
+
+  // migrate legacy v1 -> historyStore if present
+  async function migrateHistoryToStore(){
+    if (!window.historyStore || typeof window.historyStore.add !== 'function') return;
+    try{
+      const raw = localStorage.getItem(OLD_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr) || !arr.length) return;
+
+      const existing = new Set(window.historyStore.getAll().map(r => `${r.input}||${r.output}||${r.ts||r.date||''}`));
+      for (const it of arr){
+        const input = it.input || '';
+        const output = it.result || it.output || '';
+        const ts = it.date || it.ts || Date.now();
+        const key = `${input}||${output}||${ts}`;
+        if (existing.has(key)) continue;
+        window.historyStore.add({ type: it.type || 'unknown', input, output, date: ts, meta: it.meta || {} });
+      }
+      try { localStorage.removeItem(OLD_KEY); } catch(e){}
+    } catch (e) { console.error('history migration failed', e); }
+  }
+
+  // attempt immediate migration if historyStore already present
+  try { migrateHistoryToStore(); } catch(e) {}
 
   // expose for converters
   window._cordify_addHistory = addHistory;
@@ -37,6 +72,19 @@ console.log("app.js loaded");
 
   // ---------- tabs + ui ----------
   document.addEventListener("DOMContentLoaded", () => {
+    // ensure legacy history is migrated once UI is ready
+    try { migrateHistoryToStore(); } catch(e) {}
+
+    // react to changes from historyStore or other tabs (storage events)
+    window.addEventListener('historyStore:change', () => {
+      if (document.getElementById("history-tab")?.style.display !== "none") renderHistoryTable();
+    });
+    window.addEventListener('storage', (e) => {
+      if (!e) return;
+      if (e.key === 'cordify_history_v2' || e.key === OLD_KEY) {
+        if (document.getElementById("history-tab")?.style.display !== "none") renderHistoryTable();
+      }
+    });
     const convertTab = document.getElementById("convert-tab");
     const historyTab = document.getElementById("history-tab");
     const btnConvert = document.getElementById("tab-convert");
@@ -164,7 +212,7 @@ console.log("app.js loaded");
 
   // Export helpers available if you want to call from console
   window._cordify_exportHistory = function exportHistory(type, rowIdx) {
-    const arr = (function(){ try{ return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }catch{ return []; }})();
+    const arr = (function(){ try{ return getHistory(); }catch{ return []; }})();
     let data = arr;
     if (typeof rowIdx === "number" && arr[rowIdx]) data = [arr[rowIdx]];
     if (!data.length) return;
