@@ -194,10 +194,33 @@
       clearHistory(); renderHistoryTable();
     });
     document.getElementById('history-migrate')?.addEventListener('click', () => { migrateHistoryToStore(); alert('Migration started (check console for errors).'); });
-  // map controls
-  document.getElementById('map-plot-all')?.addEventListener('click', () => { const n = plotAllHistory(); alert(`Plotted ${n} points (see map)`); });
-  document.getElementById('map-clear')?.addEventListener('click', () => { clearMap(); });
-  document.getElementById('export-geojson')?.addEventListener('click', () => { const crs = document.getElementById('map-crs')?.value || 'EPSG:4326'; exportHistoryAsGeoJSON('cordify_history.geojson', crs); });
+  // Tab navigation
+  document.getElementById('tab-map')?.addEventListener('click', () => {
+    document.getElementById('convert-tab').style.display = 'none';
+    document.getElementById('history-tab').style.display = 'none';
+    document.getElementById('map-tab').style.display = '';
+    
+    // Initialize map when tab is shown
+    initMap();
+    setTimeout(() => map?.invalidateSize(), 100);
+  });
+
+  // Map controls
+  document.getElementById('map-plot-all')?.addEventListener('click', () => { 
+    const n = plotAllHistory(); 
+    if (n > 0) {
+      showFeedback(`Plotted ${n} points on the map`, 'success');
+    }
+  });
+  
+  document.getElementById('map-clear')?.addEventListener('click', () => { 
+    clearMap();
+    showFeedback('Map cleared', 'info');
+  });
+  
+  document.getElementById('export-geojson')?.addEventListener('click', () => exportHistoryAsGeoJSON('cordify_history.geojson'));
+  document.getElementById('export-kml')?.addEventListener('click', () => exportHistoryAsKml('cordify_history.kml'));
+  document.getElementById('export-kmz')?.addEventListener('click', () => exportHistoryAsKmz('cordify_history.kmz'));
   document.getElementById('export-kml')?.addEventListener('click', () => { exportHistoryAsKml('cordify_history.kml'); });
   document.getElementById('export-kmz')?.addEventListener('click', () => { exportHistoryAsKmz('cordify_history.kmz'); });
   document.getElementById('export-kml')?.addEventListener('click', () => { exportHistoryAsKml('cordify_history.kml'); });
@@ -654,6 +677,24 @@ function resetBatchUI() {
   document.getElementById("batch-status").textContent = "";
 }
 
+// Feedback system
+function showFeedback(message, type = 'info') {
+  const existing = document.querySelector('.feedback');
+  if (existing) existing.remove();
+
+  const feedback = document.createElement('div');
+  feedback.className = `feedback feedback-${type}`;
+  feedback.textContent = message;
+  
+  document.body.appendChild(feedback);
+  requestAnimationFrame(() => feedback.classList.add('show'));
+  
+  setTimeout(() => {
+    feedback.classList.remove('show');
+    setTimeout(() => feedback.remove(), 300);
+  }, 3000);
+}
+
 /* ======================== Map & Export Helpers ======================== */
 let _map = null;
 let _mapMarkers = {};
@@ -682,19 +723,32 @@ function clearMap(){
   try { _mapLayerGroup.clearLayers(); _mapMarkers = {}; } catch(e) {}
 }
 
-function showOnMap(lat, lon, label){
+function showOnMap(lat, lon, label) {
   if (!isFinite(lat) || !isFinite(lon)) return null;
-  initMap();
+  if (!initMap()) return null;
+
   try {
     const key = `${lat}:${lon}`;
-    if (_mapMarkers[key]) { _mapMarkers[key].openPopup(); return _mapMarkers[key]; }
+    if (_mapMarkers[key]) { 
+      _mapMarkers[key].openPopup();
+      _map.setView([lat, lon], Math.max(13, _map.getZoom()));
+      return _mapMarkers[key];
+    }
+
     const m = L.marker([lat, lon]);
     m.bindPopup(label || `${lat}, ${lon}`);
     m.addTo(_mapLayerGroup);
     _mapMarkers[key] = m;
-    _map.setView([lat, lon], Math.max(6, _map.getZoom()));
+    
+    // Zoom to new marker
+    _map.setView([lat, lon], 13);
+    m.openPopup();
     return m;
-  } catch(e){ console.warn('showOnMap failed', e); return null; }
+  } catch(e) { 
+    console.error('showOnMap failed:', e);
+    showFeedback('Failed to show point on map', 'error');
+    return null;
+  }
 }
 
 function parseLatLngFromOutput(s){
@@ -718,19 +772,50 @@ function parseLatLngFromOutput(s){
   return null;
 }
 
-function showHistoryItemOnMap(idOrIndex){
-  initMap();
+function showCurrentInMap(type) {
+  const resultEl = document.getElementById(type === 'dd' ? 'dd_result' : 'dms_result');
+  if (!resultEl) return;
+
+  const coords = parseLatLngFromOutput(resultEl.value);
+  if (!coords) {
+    showFeedback('Could not parse coordinates from result', 'error');
+    return;
+  }
+
+  // Switch to map tab
+  document.getElementById('tab-map').click();
+  
+  // Plot point
+  const [lat, lon] = coords;
+  showOnMap(lat, lon, `Current Result: ${resultEl.value}`);
+}
+
+function showHistoryItemOnMap(idOrIndex) {
   let rec = null;
-  if (window.historyStore && typeof window.historyStore.getById === 'function' && typeof idOrIndex === 'string') rec = window.historyStore.getById(idOrIndex);
+  if (window.historyStore && typeof window.historyStore.getById === 'function' && typeof idOrIndex === 'string') {
+    rec = window.historyStore.getById(idOrIndex);
+  }
   if (!rec) {
     const h = getHistory();
-    if (typeof idOrIndex === 'number') rec = h[idOrIndex]; else rec = h.find(r=>r.id === idOrIndex) || null;
+    if (typeof idOrIndex === 'number') rec = h[idOrIndex]; 
+    else rec = h.find(r => r.id === idOrIndex) || null;
   }
-  if (!rec) return alert('History item not found for map preview');
-  // try parse from result or output
+  if (!rec) {
+    showFeedback('History item not found', 'error');
+    return;
+  }
+
+  // Switch to map tab
+  document.getElementById('tab-map').click();
+  
+  // Parse and plot
   const s = rec.result || rec.output || '';
   const coords = parseLatLngFromOutput(s);
-  if (!coords) return alert('Could not parse lat/lon from the history item result');
+  if (!coords) {
+    showFeedback('Could not parse coordinates from history item', 'error');
+    return;
+  }
+  
   const [lat, lon] = coords;
   showOnMap(lat, lon, `${rec.type || ''} — ${rec.input}`);
 }

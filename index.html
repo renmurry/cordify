@@ -16,6 +16,7 @@
   <nav style="margin-bottom: 1em;">
     <button id="tab-convert" class="tab-btn is-active" type="button">Conversion</button>
     <button id="tab-history" class="tab-btn" type="button">History</button>
+    <button id="tab-map" class="tab-btn" type="button">Map</button>
   </nav>
 
   <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
@@ -75,7 +76,10 @@
 
     <div class="copy-wrap">
       <textarea class="result" id="dd_result" readonly></textarea>
-      <button type="button" class="copy-btn" id="copy-dd">Copy</button>
+      <div class="result-actions">
+        <button type="button" class="copy-btn" id="copy-dd">Copy</button>
+        <button type="button" class="map-btn" onclick="showCurrentInMap('dd')">Show in Map</button>
+      </div>
     </div>
 
     <hr>
@@ -109,7 +113,10 @@
 
     <div class="copy-wrap">
       <textarea class="result" id="dms_result" readonly></textarea>
-      <button type="button" class="copy-btn" id="copy-dms">Copy</button>
+      <div class="result-actions">
+        <button type="button" class="copy-btn" id="copy-dms">Copy</button>
+        <button type="button" class="map-btn" onclick="showCurrentInMap('dms')">Show in Map</button>
+      </div>
     </div>
 
     <!-- ================= Batch Convert (Excel/CSV) ================= -->
@@ -203,22 +210,20 @@
 
 </div>
 
-  <!-- Map panel -->
-  <div id="map-panel">
-    <div class="map-controls">
-      <label>CRS:
-        <select id="map-crs">
-          <option value="EPSG:4326" selected>WGS84 (EPSG:4326)</option>
-          <option value="EPSG:3857">Web Mercator (EPSG:3857)</option>
-        </select>
-      </label>
-      <button id="map-plot-all" type="button">Plot All</button>
-      <button id="map-clear" type="button">Clear Map</button>
-      <button id="export-geojson" type="button">Export GeoJSON</button>
-      <button id="export-kml" type="button">Export KML</button>
-      <button id="export-kmz" type="button">Export KMZ</button>
+  <!-- Map Tab -->
+  <div id="map-tab" class="tab-pane" style="display:none;">
+    <div class="card">
+      <div class="map-controls">
+        <button id="map-plot-all" type="button">Plot All Points</button>
+        <button id="map-clear" type="button">Clear Map</button>
+        <div class="map-export">
+          <button id="export-geojson" type="button">Export GeoJSON</button>
+          <button id="export-kml" type="button">Export KML</button>
+          <button id="export-kmz" type="button">Export KMZ</button>
+        </div>
+      </div>
+      <div id="map"></div>
     </div>
-    <div id="map"></div>
   </div>
 
   <!-- Map & GIS libraries -->
