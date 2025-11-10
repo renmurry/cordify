@@ -117,24 +117,43 @@
     const btnConvert = document.getElementById("tab-convert");
     const btnHistory = document.getElementById("tab-history");
 
-    function setActive(btnOn, btnOff) {
+    function setActive(btnOn, ...btnOffList) {
       btnOn?.classList.add("is-active");
-      btnOff?.classList.remove("is-active");
+      btnOffList.forEach(b => b?.classList.remove("is-active"));
     }
-    function enterHistoryOnly() {
-      if (convertTab) convertTab.style.display = "none";
-      if (historyTab) historyTab.style.display = "";
-      setActive(btnHistory, btnConvert);
-      renderHistoryTable();
+
+    const btnMap = document.getElementById("tab-map");
+
+    function switchTab(tab) {
+      // hide all
+      if (convertTab) convertTab.style.display = 'none';
+      if (historyTab) historyTab.style.display = 'none';
+      const mapTabEl = document.getElementById('map-tab');
+      if (mapTabEl) mapTabEl.style.display = 'none';
+
+      // show selected
+      if (tab === 'convert') {
+        if (convertTab) convertTab.style.display = '';
+        setActive(btnConvert, btnHistory, btnMap);
+      } else if (tab === 'history') {
+        if (historyTab) historyTab.style.display = '';
+        setActive(btnHistory, btnConvert, btnMap);
+        renderHistoryTable();
+      } else if (tab === 'map') {
+        if (mapTabEl) mapTabEl.style.display = '';
+        setActive(btnMap, btnConvert, btnHistory);
+        // init map lazily
+        initMap();
+        setTimeout(() => _map?.invalidateSize?.(), 120);
+      }
     }
-    function enterConversion() {
-      if (convertTab) convertTab.style.display = "";
-      if (historyTab) historyTab.style.display = "none";
-      setActive(btnConvert, btnHistory);
-    }
-    btnConvert && (btnConvert.onclick = enterConversion);
-    btnHistory && (btnHistory.onclick = enterHistoryOnly);
-    enterConversion();
+
+    btnConvert && (btnConvert.onclick = () => switchTab('convert'));
+    btnHistory && (btnHistory.onclick = () => switchTab('history'));
+    btnMap && (btnMap.onclick = () => switchTab('map'));
+
+    // start on conversion tab
+    switchTab('convert');
 
     // single conversions
     document.getElementById("btn-dms2dd")?.addEventListener("click", convertDmsToDd);
@@ -194,17 +213,6 @@
       clearHistory(); renderHistoryTable();
     });
     document.getElementById('history-migrate')?.addEventListener('click', () => { migrateHistoryToStore(); alert('Migration started (check console for errors).'); });
-  // Tab navigation: show map tab and init map lazily
-  document.getElementById('tab-map')?.addEventListener('click', () => {
-    document.getElementById('convert-tab').style.display = 'none';
-    document.getElementById('history-tab').style.display = 'none';
-    document.getElementById('map-tab').style.display = '';
-
-    // Initialize map when tab is shown
-    initMap();
-    setTimeout(() => _map?.invalidateSize?.(), 100);
-  });
-
   // Map controls (wired once)
   document.getElementById('map-plot-all')?.addEventListener('click', () => {
     const n = plotAllHistory();
