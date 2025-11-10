@@ -203,9 +203,14 @@
 
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
-<script src="./assets/js/historyStore.js" defer></script>
-<script src="./assets/js/app.js?v=6" defer></script>
+  <!-- Map & GIS libraries -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="" crossorigin="" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.1/proj4.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.2/dist/xlsx.full.min.js" defer></script>
+  <script src="./assets/js/historyStore.js" defer></script>
+  <script src="./assets/js/app.js?v=6" defer></script>
 
 <script>
   if ('serviceWorker' in navigator) {
@@ -216,3 +221,20 @@
 </script>
 </body>
 </html>
+    <!-- Map panel -->
+    <div id="map-panel">
+      <div class="map-controls">
+        <label>CRS:
+          <select id="map-crs">
+            <option value="EPSG:4326" selected>WGS84 (EPSG:4326)</option>
+            <option value="EPSG:3857">Web Mercator (EPSG:3857)</option>
+          </select>
+        </label>
+        <button id="map-plot-all" type="button">Plot All</button>
+        <button id="map-clear" type="button">Clear Map</button>
+        <button id="export-geojson" type="button">Export GeoJSON</button>
+        <button id="export-kml" type="button">Export KML</button>
+        <button id="export-kmz" type="button">Export KMZ</button>
+      </div>
+      <div id="map"></div>
+    </div>

@@ -194,6 +194,12 @@
       clearHistory(); renderHistoryTable();
     });
     document.getElementById('history-migrate')?.addEventListener('click', () => { migrateHistoryToStore(); alert('Migration started (check console for errors).'); });
+  // map controls
+  document.getElementById('map-plot-all')?.addEventListener('click', () => { const n = plotAllHistory(); alert(`Plotted ${n} points (see map)`); });
+  document.getElementById('map-clear')?.addEventListener('click', () => { clearMap(); });
+  document.getElementById('export-geojson')?.addEventListener('click', () => { const crs = document.getElementById('map-crs')?.value || 'EPSG:4326'; exportHistoryAsGeoJSON('cordify_history.geojson', crs); });
+  document.getElementById('export-kml')?.addEventListener('click', () => { exportHistoryAsKml('cordify_history.kml'); });
+  document.getElementById('export-kmz')?.addEventListener('click', () => { exportHistoryAsKmz('cordify_history.kmz'); });
   });
 
   function persistInputs() {
@@ -233,6 +239,10 @@
       `;
       // actions
       const actionsTd = tr.querySelector('td:last-child');
+      const showBtn = document.createElement('button'); showBtn.type = 'button'; showBtn.textContent = 'Show'; showBtn.className='small';
+      showBtn.addEventListener('click', () => {
+        try { showHistoryItemOnMap(item.id ?? i); } catch(e) { console.error(e); }
+      });
       const exportBtn = document.createElement('button'); exportBtn.type = 'button'; exportBtn.textContent = 'Export'; exportBtn.className='small';
       exportBtn.addEventListener('click', () => {
         try { window._cordify_exportHistory && window._cordify_exportHistory('csv', i); } catch(e) { console.error(e); }
@@ -248,9 +258,11 @@
           alert('Failed to remove history item.');
         }
       });
-      actionsTd.appendChild(exportBtn);
-      actionsTd.appendChild(document.createTextNode(' '));
-      actionsTd.appendChild(delBtn);
+  actionsTd.appendChild(showBtn);
+  actionsTd.appendChild(document.createTextNode(' '));
+  actionsTd.appendChild(exportBtn);
+  actionsTd.appendChild(document.createTextNode(' '));
+  actionsTd.appendChild(delBtn);
       tbody.appendChild(tr);
     });
   }
@@ -638,5 +650,159 @@ function resetBatchUI() {
   document.getElementById("batch-actions").style.display = "none";
   document.getElementById("batch-preview-wrap").style.display = "none";
   document.getElementById("batch-status").textContent = "";
+}
+
+/* ======================== Map & Export Helpers ======================== */
+let _map = null;
+let _mapMarkers = {};
+let _mapLayerGroup = null;
+
+function initMap(){
+  if (_map || typeof L === 'undefined') return;
+  const el = document.getElementById('map');
+  if (!el) return;
+  try {
+    _map = L.map(el, { attributionControl: true }).setView([0,0], 2);
+    _mapLayerGroup = L.layerGroup().addTo(_map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_map);
+  } catch(e){ console.warn('Leaflet init failed', e); }
+}
+
+function clearMap(){
+  if (!_map) return;
+  try { _mapLayerGroup.clearLayers(); _mapMarkers = {}; } catch(e) {}
+}
+
+function showOnMap(lat, lon, label){
+  if (!isFinite(lat) || !isFinite(lon)) return null;
+  initMap();
+  try {
+    const key = `${lat}:${lon}`;
+    if (_mapMarkers[key]) { _mapMarkers[key].openPopup(); return _mapMarkers[key]; }
+    const m = L.marker([lat, lon]);
+    m.bindPopup(label || `${lat}, ${lon}`);
+    m.addTo(_mapLayerGroup);
+    _mapMarkers[key] = m;
+    _map.setView([lat, lon], Math.max(6, _map.getZoom()));
+    return m;
+  } catch(e){ console.warn('showOnMap failed', e); return null; }
+}
+
+function parseLatLngFromOutput(s){
+  if (!s || typeof s !== 'string') return null;
+  // try explicit lines like 'Lat: 12.34' or 'Latitude (Y): 12.34' etc
+  const latMatch = s.match(/(?:Lat(?:itude)?(?:\s*\(Y\))?\s*[:=]?\s*)(-?\d+(?:\.\d+)?)/i);
+  const lonMatch = s.match(/(?:Lon(?:gitude)?(?:\s*\(X\))?\s*[:=]?\s*)(-?\d+(?:\.\d+)?)/i);
+  if (latMatch && lonMatch) {
+    const lat = parseFloat(latMatch[1]);
+    const lon = parseFloat(lonMatch[1]);
+    if (isFinite(lat) && isFinite(lon)) return [lat, lon];
+  }
+  // fallback: find first two float-like numbers
+  const all = s.match(/-?\d+(?:\.\d+)?/g);
+  if (all && all.length >= 2) {
+    const a = parseFloat(all[0]); const b = parseFloat(all[1]);
+    // heuristics: lat range narrower
+    if (Math.abs(a) <= 90 && Math.abs(b) <= 180) return [a,b];
+    if (Math.abs(b) <= 90 && Math.abs(a) <= 180) return [b,a];
+  }
+  return null;
+}
+
+function showHistoryItemOnMap(idOrIndex){
+  initMap();
+  let rec = null;
+  if (window.historyStore && typeof window.historyStore.getById === 'function' && typeof idOrIndex === 'string') rec = window.historyStore.getById(idOrIndex);
+  if (!rec) {
+    const h = getHistory();
+    if (typeof idOrIndex === 'number') rec = h[idOrIndex]; else rec = h.find(r=>r.id === idOrIndex) || null;
+  }
+  if (!rec) return alert('History item not found for map preview');
+  // try parse from result or output
+  const s = rec.result || rec.output || '';
+  const coords = parseLatLngFromOutput(s);
+  if (!coords) return alert('Could not parse lat/lon from the history item result');
+  const [lat, lon] = coords;
+  showOnMap(lat, lon, `${rec.type || ''} — ${rec.input}`);
+}
+
+function plotAllHistory(){
+  initMap();
+  clearMap();
+  const items = getHistory();
+  let count = 0;
+  for (const it of items){
+    const s = it.result || it.output || '';
+    const coords = parseLatLngFromOutput(s);
+    if (!coords) continue;
+    const [lat, lon] = coords;
+    try { showOnMap(lat, lon, `${it.type || ''} — ${it.input}`); count++; } catch(e){}
+    if (count > 5000) { alert('Too many points — plotting stopped at 5000.'); break; }
+  }
+  return count;
+}
+
+function downloadBlob(filename, blob){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 300);
+}
+
+function historyToGeoJSON(items, targetEpsg = 'EPSG:4326'){
+  const features = [];
+  for (const it of items){
+    const s = it.result || it.output || '';
+    const coords = parseLatLngFromOutput(s);
+    if (!coords) continue;
+    let [lat, lon] = coords;
+    // if reprojection requested and proj4 available
+    if (targetEpsg !== 'EPSG:4326' && typeof proj4 !== 'undefined'){
+      try {
+        const p = proj4('EPSG:4326', targetEpsg, [lon, lat]); // returns [x,y]
+        // for GeoJSON we still put lon,lat if target is 4326. If target projected, use x,y
+        features.push({ type:'Feature', geometry:{ type:'Point', coordinates:[p[0], p[1]] }, properties:{ id: it.id || null, ts: it.ts||it.date||null, input: it.input||'', output: it.output||it.result||'', type: it.type||'' } });
+        continue;
+      } catch(e){ /* fallthrough to default */ }
+    }
+    features.push({ type:'Feature', geometry:{ type:'Point', coordinates:[lon, lat] }, properties:{ id: it.id || null, ts: it.ts||it.date||null, input: it.input||'', output: it.output||it.result||'', type: it.type||'' } });
+  }
+  return { type:'FeatureCollection', features };
+}
+
+function historyToKml(items){
+  const pls = [];
+  for (const it of items){
+    const s = it.result || it.output || '';
+    const coords = parseLatLngFromOutput(s);
+    if (!coords) continue;
+    const [lat, lon] = coords;
+    const name = (it.input || '').replace(/</g,'&lt;');
+    const desc = (it.output || it.result || '').replace(/</g,'&lt;');
+    const ts = it.ts || it.date || '';
+    pls.push(`<Placemark><name>${name}</name><description><![CDATA[${desc}<br/>${ts}]]></description><Point><coordinates>${lon},${lat},0</coordinates></Point></Placemark>`);
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Cordify Export</name>${pls.join('\n')}</Document></kml>`;
+}
+
+async function exportHistoryAsGeoJSON(filename='history.geojson', targetEpsg='EPSG:4326'){
+  const items = getHistory();
+  const geo = historyToGeoJSON(items, targetEpsg);
+  const blob = new Blob([JSON.stringify(geo, null, 2)], { type: 'application/geo+json' });
+  downloadBlob(filename, blob);
+}
+
+function exportHistoryAsKml(filename='history.kml'){
+  const items = getHistory();
+  const kml = historyToKml(items);
+  const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+  downloadBlob(filename, blob);
+}
+
+async function exportHistoryAsKmz(filename='history.kmz'){
+  const items = getHistory();
+  const kml = historyToKml(items);
+  if (typeof JSZip === 'undefined') { alert('JSZip not loaded'); return; }
+  const zip = new JSZip(); zip.file('doc.kml', kml);
+  const content = await zip.generateAsync({ type:'blob', compression:'DEFLATE' });
+  downloadBlob(filename, content);
 }
 /* ====================== END BATCH ====================== */
