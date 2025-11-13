@@ -166,6 +166,10 @@
     document.getElementById("copy-dd")?.addEventListener("click", () => copyText(document.getElementById("dd_result")?.value || ""));
     document.getElementById("copy-dms")?.addEventListener("click", () => copyText(document.getElementById("dms_result")?.value || ""));
 
+    // Show in Map buttons
+    document.getElementById("show-dd-map")?.addEventListener("click", () => showCurrentInMap('dd'));
+    document.getElementById("show-dms-map")?.addEventListener("click", () => showCurrentInMap('dms'));
+
     // Enter key shortcuts
     const dmsInputs = ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec","dms_lat_dir","dms_lon_dir"];
     dmsInputs.forEach(id => document.getElementById(id)?.addEventListener("keydown", e => { if (e.key === "Enter") convertDmsToDd(); }));
