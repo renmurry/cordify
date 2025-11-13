@@ -789,7 +789,10 @@ function parseLatLngFromOutput(s){
 
 function showCurrentInMap(type) {
   const resultEl = document.getElementById(type === 'dd' ? 'dd_result' : 'dms_result');
-  if (!resultEl) return;
+  if (!resultEl) {
+    console.error('Result element not found');
+    return;
+  }
 
   const coords = parseLatLngFromOutput(resultEl.value);
   if (!coords) {
@@ -798,11 +801,27 @@ function showCurrentInMap(type) {
   }
 
   // Switch to map tab
-  document.getElementById('tab-map').click();
+  const mapTabBtn = document.getElementById('tab-map');
+  if (!mapTabBtn) {
+    console.error('Map tab button not found');
+    return;
+  }
+  mapTabBtn.click();
 
-  // Plot point
+  // Wait for map to render, then plot point
   const [lat, lon] = coords;
-  showOnMap(lat, lon, `Current Result: ${resultEl.value}`);
+  setTimeout(() => {
+    if (!initMap()) {
+      showFeedback('Failed to initialize map', 'error');
+      return;
+    }
+    // Ensure map size is correct after tab switch
+    if (_map && _map.invalidateSize) {
+      _map.invalidateSize();
+    }
+    showOnMap(lat, lon, `Current Result: ${resultEl.value}`);
+    showFeedback('Point plotted on map', 'success');
+  }, 200);
 }
 
 // Expose the function to the global scope for the "Show in Map" button
@@ -824,7 +843,12 @@ function showHistoryItemOnMap(idOrIndex) {
   }
 
   // Switch to map tab
-  document.getElementById('tab-map').click();
+  const mapTabBtn = document.getElementById('tab-map');
+  if (!mapTabBtn) {
+    console.error('Map tab button not found');
+    return;
+  }
+  mapTabBtn.click();
 
   // Parse and plot
   const s = rec.result || rec.output || '';
@@ -834,8 +858,20 @@ function showHistoryItemOnMap(idOrIndex) {
     return;
   }
 
+  // Wait for map to render, then plot point
   const [lat, lon] = coords;
-  showOnMap(lat, lon, `${rec.type || ''} — ${rec.input}`);
+  setTimeout(() => {
+    if (!initMap()) {
+      showFeedback('Failed to initialize map', 'error');
+      return;
+    }
+    // Ensure map size is correct after tab switch
+    if (_map && _map.invalidateSize) {
+      _map.invalidateSize();
+    }
+    showOnMap(lat, lon, `${rec.type || ''} — ${rec.input}`);
+    showFeedback('Point plotted on map', 'success');
+  }, 200);
 }
 
 // Expose to global scope for inline onclick handlers
