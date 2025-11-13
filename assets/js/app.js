@@ -6,6 +6,8 @@
 
 // Wait for DOM and external libraries to load
 function initializeApp() {
+  console.log('DOM ready, checking libraries...');
+
   // Check if required libraries are loaded
   if (typeof L === 'undefined') {
     console.warn('Leaflet not yet loaded, retrying...');
@@ -13,6 +15,34 @@ function initializeApp() {
     return;
   }
 
+  console.log('Leaflet loaded, checking other libraries...');
+
+  // Check other libraries
+  if (typeof XLSX === 'undefined') {
+    console.warn('XLSX not loaded');
+  } else {
+    console.log('XLSX loaded');
+  }
+
+  if (typeof JSZip === 'undefined') {
+    console.warn('JSZip not loaded');
+  } else {
+    console.log('JSZip loaded');
+  }
+
+  // Libraries are loaded, now initialize the app
+  console.log('Initializing Cordify app...');
+  initCordifyApp();
+}
+
+// Start initialization when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+  initializeApp();
+}
+
+function initCordifyApp() {
 (function () {
   const MAX_HISTORY = 1000;
   const OLD_KEY = "cordify_history_v1";
@@ -150,22 +180,42 @@ function initializeApp() {
         setActive(btnHistory, btnConvert, btnMap);
         renderHistoryTable();
       } else if (tab === 'map') {
-        if (mapTabEl) mapTabEl.style.display = '';
+        console.log('Switching to map tab');
+        if (mapTabEl) {
+          mapTabEl.style.display = '';
+          console.log('Map tab made visible');
+        }
         setActive(btnMap, btnConvert, btnHistory);
-        
+
+        // Ensure map container has proper dimensions before initializing
+        const mapEl = document.getElementById('map');
+        if (mapEl) {
+          mapEl.style.width = '100%';
+          mapEl.style.height = '400px';
+          mapEl.style.minHeight = '400px';
+          console.log('Map container dimensions set:', mapEl.offsetWidth, 'x', mapEl.offsetHeight);
+        }
+
         // Initialize map after making the container visible
         setTimeout(() => {
+          console.log('Attempting to initialize map...');
           if (!_map) {
             if (!initMap()) {
               console.error('Failed to initialize map');
+              // Try to show an error message
+              const mapEl = document.getElementById('map');
+              if (mapEl) {
+                mapEl.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">Failed to load map. Please check your internet connection and try again.</div>';
+              }
               return;
             }
           }
           // Always invalidate size when switching to map tab
           if (_map && _map.invalidateSize) {
             _map.invalidateSize(true);
+            console.log('Map size invalidated');
           }
-        }, 50);
+        }, 100);
       }
     }
 
@@ -743,42 +793,67 @@ let _mapLayerGroup = null;
 
 function initMap(){
   if (_map) return true;
-  if (typeof L === 'undefined') { 
-    console.warn('Leaflet not loaded'); 
-    return false; 
-  }
-  const el = document.getElementById('map');
-  if (!el) { 
-    console.warn('Map element not found'); 
-    return false; 
-  }
-  
-  // Ensure the map container is visible and has dimensions
-  const mapTab = document.getElementById('map-tab');
-  if (mapTab && mapTab.style.display === 'none') {
-    console.warn('Map container is hidden, cannot initialize');
+  if (typeof L === 'undefined') {
+    console.warn('Leaflet not loaded');
     return false;
   }
-  
+
+  // Check if Leaflet has the required methods
+  if (!L.map || !L.tileLayer || !L.layerGroup) {
+    console.error('Leaflet library is incomplete');
+    return false;
+  }
+
+  const el = document.getElementById('map');
+  if (!el) {
+    console.warn('Map element not found');
+    return false;
+  }
+
+  // Ensure the map container is visible and has dimensions
+  const mapTab = document.getElementById('map-tab');
+  if (!mapTab) {
+    console.warn('Map tab container not found');
+    return false;
+  }
+
+  // Make sure the container is visible
+  if (mapTab.style.display === 'none') {
+    console.warn('Map container is hidden, making it visible for initialization');
+    mapTab.style.display = '';
+  }
+
+  // Ensure the element has dimensions
+  if (el.offsetWidth === 0 || el.offsetHeight === 0) {
+    console.warn('Map container has no dimensions, setting temporary size');
+    el.style.width = '100%';
+    el.style.height = '400px';
+    el.style.minHeight = '400px';
+  }
+
   try {
-    _map = L.map(el, { 
+    console.log('Initializing Leaflet map...');
+    _map = L.map(el, {
       attributionControl: true,
-      preferCanvas: false 
+      preferCanvas: false
     }).setView([0,0], 2);
-    
+
     _mapLayerGroup = L.layerGroup().addTo(_map);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap contributors'
     }).addTo(_map);
-    
-    // Force map to calculate size
+
+    console.log('Map initialized successfully');
+
+    // Force map to calculate size after a short delay
     setTimeout(() => {
       if (_map && _map.invalidateSize) {
         _map.invalidateSize(true);
+        console.log('Map size invalidated');
       }
     }, 100);
-    
+
     return true;
   } catch(e){
     console.error('Leaflet init failed:', e);
@@ -1075,11 +1150,4 @@ async function exportHistoryAsKmz(filename='history.kmz'){
 }
 /* ====================== END BATCH ====================== */
 })(); // End of main IIFE
-} // End of initializeApp function
-
-// Start initialization when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeApp);
-} else {
-  initializeApp();
-}
+} // End of initCordifyApp function
