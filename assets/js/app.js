@@ -805,6 +805,9 @@ function showCurrentInMap(type) {
   showOnMap(lat, lon, `Current Result: ${resultEl.value}`);
 }
 
+// Expose to global scope for inline onclick handlers
+window.showCurrentInMap = showCurrentInMap;
+
 function showHistoryItemOnMap(idOrIndex) {
   let rec = null;
   if (window.historyStore && typeof window.historyStore.getById === 'function' && typeof idOrIndex === 'string') {
@@ -834,6 +837,9 @@ function showHistoryItemOnMap(idOrIndex) {
   const [lat, lon] = coords;
   showOnMap(lat, lon, `${rec.type || ''} — ${rec.input}`);
 }
+
+// Expose to global scope for inline onclick handlers
+window.showHistoryItemOnMap = showHistoryItemOnMap;
 
 function plotAllHistory(){
   if (!initMap()) {
@@ -912,14 +918,29 @@ function historyToGeoJSON(items, targetEpsg = 'EPSG:4326'){
 }
 
 function historyToKml(items){
+  // Helper to escape XML special characters
+  function escapeXml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+  
+  // Helper to sanitize CDATA content (cannot contain ]]>)
+  function sanitizeCDATA(str) {
+    return String(str).replace(/]]>/g, ']] >');
+  }
+  
   const pls = [];
   for (const it of items){
     const s = it.result || it.output || '';
     const coords = parseLatLngFromOutput(s);
     if (!coords) continue;
     const [lat, lon] = coords;
-    const name = (it.input || '').replace(/</g,'&lt;');
-    const desc = (it.output || it.result || '').replace(/</g,'&lt;');
+    const name = escapeXml(it.input || '');
+    const desc = sanitizeCDATA(it.output || it.result || '');
     const ts = it.ts || it.date || '';
     pls.push(`<Placemark><name>${name}</name><description><![CDATA[${desc}<br/>${ts}]]></description><Point><coordinates>${lon},${lat},0</coordinates></Point></Placemark>`);
   }

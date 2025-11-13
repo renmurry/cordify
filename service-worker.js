@@ -1,10 +1,11 @@
 const CACHE_NAME = 'cordify-cache-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/favicon.ico',
-  '/assets/css/styles.css',
-  '/assets/js/app.js'
+  './',
+  './index.html',
+  './favicon.ico',
+  './assets/css/styles.css',
+  './assets/js/app.js',
+  './assets/js/historyStore.js'
 ];
 
 self.addEventListener('install', event => {
