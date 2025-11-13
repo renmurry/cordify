@@ -805,7 +805,7 @@ function showCurrentInMap(type) {
   showOnMap(lat, lon, `Current Result: ${resultEl.value}`);
 }
 
-// Expose to global scope for inline onclick handlers
+// Expose the function to the global scope for the "Show in Map" button
 window.showCurrentInMap = showCurrentInMap;
 
 function showHistoryItemOnMap(idOrIndex) {
