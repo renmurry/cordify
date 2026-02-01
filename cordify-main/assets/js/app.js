@@ -8,12 +8,8 @@
 function initializeApp() {
   console.log('DOM ready, checking libraries...');
 
-  // Check if required libraries are loaded
-  if (typeof L === 'undefined') {
-    console.warn('Leaflet not yet loaded, retrying...');
-    setTimeout(initializeApp, 100);
-    return;
-  }
+  
+
 
   // Libraries are loaded, now initialize the app
   console.log('Initializing Cordify app...');
