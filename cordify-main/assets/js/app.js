@@ -114,7 +114,6 @@ function initCordifyApp() {
   window._cordify_addHistory = addHistory;
 
   // ---------- tabs + ui ----------
-  // REMOVED INNER DOMContentLoaded WRAPPER HERE
 
   // ensure legacy history is migrated once UI is ready
   try { migrateHistoryToStore(); } catch(e) {}
@@ -1096,5 +1095,5 @@ async function exportHistoryAsKmz(filename='history.kmz'){
   downloadBlob(filename, content);
 }
 /* ====================== END BATCH ====================== */
-} // End of initCordifyApp
-
+})(); // End of main IIFE
+} // End of initCordifyApp function
