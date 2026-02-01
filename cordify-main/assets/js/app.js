@@ -28,7 +28,6 @@ if (document.readyState === 'loading') {
 }
 
 function initCordifyApp() {
-(function () {
   const MAX_HISTORY = 1000;
   const OLD_KEY = "cordify_history_v1";
 
@@ -398,7 +397,6 @@ function initCordifyApp() {
   };
 
   window.clearCordifyHistory = clearHistory;
-})();
 
 /* ----------------------------- Converters ----------------------------- */
 function parseDmsString(dmsStr) {
@@ -1095,5 +1093,4 @@ async function exportHistoryAsKmz(filename='history.kmz'){
   downloadBlob(filename, content);
 }
 /* ====================== END BATCH ====================== */
-})(); // End of main IIFE
 } // End of initCordifyApp function
