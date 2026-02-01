@@ -917,54 +917,42 @@ function parseLatLngFromOutput(s){
   return null;
 }
 
+// Fixed showCurrentInMap function
 function showCurrentInMap(type) {
+  console.log('Attempting to show map for:', type);
   const resultEl = document.getElementById(type === 'dd' ? 'dd_result' : 'dms_result');
-  if (!resultEl) {
-    console.error('Result element not found');
-    showFeedback('Result element not found', 'error');
-    return;
-  }
-
-  const resultValue = resultEl.value.trim();
-  if (!resultValue) {
-    showFeedback('No coordinates to display. Please convert some coordinates first.', 'error');
-    return;
-  }
-
-  const coords = parseLatLngFromOutput(resultValue);
-  if (!coords) {
-    showFeedback('Could not parse coordinates from result', 'error');
-    return;
-  }
-
-  // Switch to map tab
-  const mapTabBtn = document.getElementById('tab-map');
-  if (!mapTabBtn) {
-    console.error('Map tab button not found');
-    showFeedback('Map tab not available', 'error');
-    return;
-  }
   
-  mapTabBtn.click();
+  if (!resultEl) return console.error('Result element not found');
+  
+  const val = resultEl.value.trim();
+  if (!val) {
+    alert("No coordinates to show. Please perform a conversion first.");
+    return;
+  }
 
-  // Wait for map to render, then plot point
+  const coords = parseLatLngFromOutput(val);
+  if (!coords) {
+    alert("Could not find valid coordinates in the result.");
+    return;
+  }
+
   const [lat, lon] = coords;
+
+  // 1. Switch to the map tab
+  const btnMap = document.getElementById("tab-map");
+  if (btnMap) btnMap.click();
+
+  // 2. Wait for the tab to become visible, then plot
   setTimeout(() => {
-    if (!initMap()) {
-      showFeedback('Failed to initialize map', 'error');
-      return;
-    }
-    // Ensure map size is correct after tab switch
-    if (_map && _map.invalidateSize) {
-      _map.invalidateSize(true);
-    }
-    const marker = showOnMap(lat, lon, `Current Result: ${resultValue}`);
-    if (marker) {
-      showFeedback('Point plotted on map', 'success');
+    if (typeof initMap === 'function') initMap();
+    
+    if (_map) {
+      _map.invalidateSize(); // Critical: fixes gray map issue
+      showOnMap(lat, lon, `Result: ${lat}, ${lon}`);
     } else {
-      showFeedback('Failed to plot point on map', 'error');
+      alert("Map could not be initialized.");
     }
-  }, 300);
+  }, 200);
 }
 
 // Expose the function to the global scope for the "Show in Map" button
