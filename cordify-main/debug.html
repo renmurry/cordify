@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cordify Debug Test</title>
+</head>
+<body>
+    <h1>Debug Test</h1>
+    <button onclick="testMap()">Test Map Functionality</button>
+    <button onclick="testConversion()">Test Conversion</button>
+    <div id="results"></div>
+    
+    <script>
+        function testMap() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h3>Map Test Results:</h3>';
+            
+            // Check if Leaflet is loaded
+            if (typeof L === 'undefined') {
+                results.innerHTML += '<p style="color: red;">❌ Leaflet not loaded</p>';
+            } else {
+                results.innerHTML += '<p style="color: green;">✅ Leaflet loaded</p>';
+            }
+            
+            // Check map container
+            const mapEl = parent.document.getElementById('map');
+            if (!mapEl) {
+                results.innerHTML += '<p style="color: red;">❌ Map element not found in parent</p>';
+            } else {
+                results.innerHTML += '<p style="color: green;">✅ Map element found</p>';
+                results.innerHTML += `<p>Map element dimensions: ${mapEl.offsetWidth}x${mapEl.offsetHeight}</p>`;
+            }
+        }
+        
+        function testConversion() {
+            // Test coordinate parsing
+            const testString = "Latitude (Y): 40.7128\nLongitude (X): -74.0060";
+            const results = document.getElementById('results');
+            results.innerHTML = '<h3>Conversion Test Results:</h3>';
+            results.innerHTML += `<p>Test string: ${testString}</p>`;
+            
+            // Simulate the parsing logic
+            const latMatch = testString.match(/(?:Lat(?:itude)?(?:\s*\(Y\))?\s*[:=]?\s*)(-?\d+(?:\.\d+)?)/i);
+            const lonMatch = testString.match(/(?:Lon(?:gitude)?(?:\s*\(X\))?\s*[:=]?\s*)(-?\d+(?:\.\d+)?)/i);
+            
+            if (latMatch && lonMatch) {
+                results.innerHTML += `<p style="color: green;">✅ Parsing successful: ${latMatch[1]}, ${lonMatch[1]}</p>`;
+            } else {
+                results.innerHTML += '<p style="color: red;">❌ Parsing failed</p>';
+            }
+        }
+    </script>
+</body>
+</html>

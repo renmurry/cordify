@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Coordinate Converter (DMS ⇄ DD)</title>
+
+  <link rel="stylesheet" href="./assets/css/styles.css">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4a90e2">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<div class="container">
+
+  <nav style="margin-bottom: 1em;">
+    <button id="tab-convert" class="tab-btn is-active" type="button">Conversion</button>
+    <button id="tab-history" class="tab-btn" type="button">History</button>
+    <button id="tab-map" class="tab-btn" type="button">Map</button>
+  </nav>
+
+  <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
+
+  <!-- Conversion Tab -->
+  <div id="convert-tab">
+    <h4>DMS to DD</h4>
+
+    <div class="small inline" style="margin: 4px 0 8px;">
+      <span>Precision (DD):</span>
+      <select id="precision-dd">
+        <option value="6" selected>6</option>
+        <option value="5">5</option>
+        <option value="4">4</option>
+        <option value="3">3</option>
+      </select>
+      <span class="small">Press <b>Enter</b> in inputs to convert</span>
+    </div>
+
+    <div class="row">
+      <label>Latitude DMS:
+        <input id="dms_lat_string" type="text" placeholder='e.g. 12°34&#39;56.7&quot; N or -12 34 56.7' aria-label="Latitude DMS">
+      </label>
+    </div>
+    <div class="row">
+      <label>Longitude DMS:
+        <input id="dms_lon_string" type="text" placeholder='e.g. 77°35&#39;12&quot; E or -77 35 12' aria-label="Longitude DMS">
+      </label>
+    </div>
+    <div class="error" id="err-dms">Invalid DMS input. Check ranges (min&lt;60, sec&lt;60) and use N/S/E/W correctly.</div>
+
+    <hr style="margin-top:12px; margin-bottom:12px;">
+
+    <div class="row">
+      <b>Latitude (Y):</b>
+      <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg" aria-label="Lat degrees" ></label>
+      <label>' <input id="dms_lat_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Lat minutes"></label>
+      <label>" <input id="dms_lat_sec" type="number" step="any" min="0" max="59.9999" placeholder="sec" aria-label="Lat seconds"></label>
+      <select id="dms_lat_dir" aria-label="Lat direction">
+        <option value="N">N</option><option value="S">S</option>
+      </select>
+    </div>
+    <div class="row">
+      <b>Longitude (X):</b>
+      <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg" aria-label="Lon degrees"></label>
+      <label>' <input id="dms_lon_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Lon minutes"></label>
+      <label>" <input id="dms_lon_sec" type="number" step="any" min="0" max="59.9999" placeholder="sec" aria-label="Lon seconds"></label>
+      <select id="dms_lon_dir" aria-label="Lon direction">
+        <option value="E">E</option><option value="W">W</option>
+      </select>
+    </div>
+
+    <div class="inline" style="margin:6px 0 10px;">
+      <button class="btn-primary" type="button" id="btn-dms2dd">Convert to DD</button>
+      <button type="button" id="btn-clear-dms" title="Clear DMS inputs">Clear</button>
+    </div>
+
+    <div class="copy-wrap">
+      <textarea class="result" id="dd_result" readonly></textarea>
+      <div class="result-actions">
+        <button type="button" class="copy-btn" id="copy-dd">Copy</button>
+        <button type="button" class="map-btn" id="show-dd-map">Show in Map</button>
+      </div>
+    </div>
+
+    <hr>
+
+    <h4>DD to DMS</h4>
+    <div class="small inline" style="margin: 4px 0 8px;">
+      <span>Precision (seconds):</span>
+      <select id="precision-dms">
+        <option value="3" selected>3</option>
+        <option value="2">2</option>
+        <option value="1">1</option>
+        <option value="0">0</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <b>Latitude (Y):</b>
+      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242" aria-label="Latitude DD"></label>
+    </div>
+    <div class="row">
+      <b>Longitude (X):</b>
+      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667" aria-label="Longitude DD"></label>
+    </div>
+    <div class="error" id="err-dd">Enter valid DD (Lat −90..90, Lon −180..180)</div>
+
+    <div class="inline" style="margin:6px 0 10px;">
+      <button class="btn-primary" type="button" id="btn-dd2dms">Convert to DMS</button>
+      <button type="button" id="btn-clear-dd" title="Clear DD inputs">Clear</button>
+      <button type="button" id="btn-swap" title="Swap lat/lon">Swap</button>
+    </div>
+
+    <div class="copy-wrap">
+      <textarea class="result" id="dms_result" readonly></textarea>
+      <div class="result-actions">
+        <button type="button" class="copy-btn" id="copy-dms">Copy</button>
+        <button type="button" class="map-btn" id="show-dms-map">Show in Map</button>
+      </div>
+    </div>
+
+    <!-- ================= Batch Convert (Excel/CSV) ================= -->
+    <hr>
+    <h4>Batch Convert (Excel / CSV)</h4>
+    <div class="small" style="margin-bottom:6px;">
+      Upload a file, pick columns, choose direction, then export.
+    </div>
+
+    <div class="row">
+      <input type="file" id="batch-file" accept=".xlsx,.xls,.csv" />
+      <label class="inline">Direction:
+        <select id="batch-direction">
+          <option value="DD2DMS">DD → DMS</option>
+          <option value="DMS2DD">DMS → DD</option>
+        </select>
+      </label>
+      <label class="inline">Input format:
+        <select id="batch-format">
+          <option value="dd-columns">DD columns</option>
+          <option value="dms-strings">DMS string columns</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="batch-mapping" class="row" style="display:none;">
+      <div id="map-dd" class="inline">
+        <span class="small">DD columns:</span>
+        <label>Lat:
+          <select id="map-dd-lat"></select>
+        </label>
+        <label>Lon:
+          <select id="map-dd-lon"></select>
+        </label>
+      </div>
+
+      <div id="map-dms" class="inline" style="display:none;">
+        <span class="small">DMS string columns:</span>
+        <label>Lat DMS:
+          <select id="map-dms-lat"></select>
+        </label>
+        <label>Lon DMS:
+          <select id="map-dms-lon"></select>
+        </label>
+      </div>
+    </div>
+
+    <!-- Actions row is always visible -->
+    <div class="inline" id="batch-actions" style="margin:6px 0 10px;">
+      <button class="btn-primary" id="batch-run" type="button">Convert (Run Batch)</button>
+      <button id="batch-download-xlsx" type="button">Download XLSX</button>
+      <button id="batch-download-csv" type="button">Download CSV</button>
+      <span class="small" id="batch-status"></span>
+    </div>
+
+    <div id="batch-preview-wrap" style="display:none;">
+      <div class="small" style="margin:6px 0;">Preview (first 20 rows)</div>
+      <table class="table" id="batch-preview" style="width:100%;">
+        <thead><tr id="batch-head"></tr></thead>
+        <tbody id="batch-body"></tbody>
+      </table>
+    </div>
+    <!-- ================= End Batch ================= -->
+
+  </div>
+  <!-- /#convert-tab -->
+
+  <!-- History (read-only) -->
+  <div id="history-tab" style="display:none;">
+    <div style="margin:8px 0; display:flex; gap:8px; align-items:center;">
+      <p id="history-empty" style="margin:0;">No history yet.</p>
+      <div style="margin-left:auto;">
+        <button id="history-export-json" type="button">Export All (JSON)</button>
+        <button id="history-clear" type="button">Clear History</button>
+        <button id="history-migrate" type="button">Migrate Legacy</button>
+      </div>
+    </div>
+    <table id="history-table" class="table" style="display:none; width:100%;">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Input</th>
+          <th>Result</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</div>
+
+  <!-- Map Tab -->
+  <div id="map-tab" class="tab-pane" style="display:none;">
+    <div class="card">
+      <div class="map-controls">
+        <button id="map-plot-all" type="button">Plot All Points</button>
+        <button id="map-clear" type="button">Clear Map</button>
+        <div class="map-export">
+          <button id="export-geojson" type="button">Export GeoJSON</button>
+          <button id="export-kml" type="button">Export KML</button>
+          <button id="export-kmz" type="button">Export KMZ</button>
+        </div>
+      </div>
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <!-- Map & GIS libraries -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.1/proj4.js" integrity="sha512-X8mXY0+r1h7SrCJ1e9CxIjYzOT+GbWHoYWD8vvLj6IHXHETYI7uIdWRmpKfY5wLMc8oYCJT+dwvNVnbWbPJx7w==" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha256-Qlg+23SUclRDZjYeMQvVv1bBxhzaF9pXN4TvMtjXFyM=" crossorigin="anonymous"></script>
+  <!-- use known-good SheetJS CDN (avoids some MIME issues on certain hosts) -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="./assets/js/historyStore.js"></script>
+  <script src="./assets/js/app.js?v=8"></script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./service-worker.js');
+    });
+  }
+</script>
+</body>
+</html>
