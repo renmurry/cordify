@@ -15,21 +15,6 @@ function initializeApp() {
     return;
   }
 
-  console.log('Leaflet loaded, checking other libraries...');
-
-  // Check other libraries
-  if (typeof XLSX === 'undefined') {
-    console.warn('XLSX not loaded');
-  } else {
-    console.log('XLSX loaded');
-  }
-
-  if (typeof JSZip === 'undefined') {
-    console.warn('JSZip not loaded');
-  } else {
-    console.log('JSZip loaded');
-  }
-
   // Libraries are loaded, now initialize the app
   console.log('Initializing Cordify app...');
   initCordifyApp();
@@ -74,7 +59,6 @@ function initCordifyApp() {
 
   function getHistory() {
     if (window.historyStore && typeof window.historyStore.getAll === 'function') {
-      // historyStore returns newest-first already
       return window.historyStore.getAll().map(r => ({ id: r.id, ts: r.ts || r.date, type: r.type || '', input: r.input || '', result: r.output || r.result || '', date: r.date || r.ts || r.ts }));
     }
     return _fallback_getHistory();
@@ -91,11 +75,9 @@ function initCordifyApp() {
   }
 
   function removeHistoryAt(indexOrId) {
-    // if id (string) and historyStore available, remove by id
     if (window.historyStore && typeof window.historyStore.remove === 'function' && typeof indexOrId === 'string') {
       try { return window.historyStore.remove(indexOrId); } catch(e) { /* fallthrough */ }
     }
-    // if numeric index, try remove from store by index -> map to id
     if (window.historyStore && typeof window.historyStore.getAll === 'function' && typeof indexOrId === 'number') {
       try {
         const arr = window.historyStore.getAll();
@@ -103,12 +85,10 @@ function initCordifyApp() {
         if (rec && rec.id) return window.historyStore.remove(rec.id);
       } catch(e) {}
     }
-    // fallback: remove by index from legacy storage
     if (typeof indexOrId === 'number') return _fallback_removeByIndex(indexOrId);
     return false;
   }
 
-  // migrate legacy v1 -> historyStore if present
   async function migrateHistoryToStore(){
     if (!window.historyStore || typeof window.historyStore.add !== 'function') return;
     try{
@@ -130,181 +110,162 @@ function initCordifyApp() {
     } catch (e) { console.error('history migration failed', e); }
   }
 
-  // attempt immediate migration if historyStore already present
   try { migrateHistoryToStore(); } catch(e) {}
-
-  // expose for converters
   window._cordify_addHistory = addHistory;
-  // window._cordify_renderHistory will be assigned after renderHistoryTable is defined
 
   // ---------- tabs + ui ----------
-  document.addEventListener("DOMContentLoaded", () => {
-    // ensure legacy history is migrated once UI is ready
-    try { migrateHistoryToStore(); } catch(e) {}
+  // REMOVED INNER DOMContentLoaded WRAPPER HERE
 
-    // react to changes from historyStore or other tabs (storage events)
-    window.addEventListener('historyStore:change', () => {
+  // ensure legacy history is migrated once UI is ready
+  try { migrateHistoryToStore(); } catch(e) {}
+
+  // react to changes from historyStore or other tabs (storage events)
+  window.addEventListener('historyStore:change', () => {
+    if (document.getElementById("history-tab")?.style.display !== "none") renderHistoryTable();
+  });
+  window.addEventListener('storage', (e) => {
+    if (!e) return;
+    if (e.key === 'cordify_history_v2' || e.key === OLD_KEY) {
       if (document.getElementById("history-tab")?.style.display !== "none") renderHistoryTable();
-    });
-    window.addEventListener('storage', (e) => {
-      if (!e) return;
-      if (e.key === 'cordify_history_v2' || e.key === OLD_KEY) {
-        if (document.getElementById("history-tab")?.style.display !== "none") renderHistoryTable();
-      }
-    });
-    const convertTab = document.getElementById("convert-tab");
-    const historyTab = document.getElementById("history-tab");
-    const btnConvert = document.getElementById("tab-convert");
-    const btnHistory = document.getElementById("tab-history");
-
-    function setActive(btnOn, ...btnOffList) {
-      btnOn?.classList.add("is-active");
-      btnOffList.forEach(b => b?.classList.remove("is-active"));
     }
+  });
 
-    const btnMap = document.getElementById("tab-map");
+  const convertTab = document.getElementById("convert-tab");
+  const historyTab = document.getElementById("history-tab");
+  const btnConvert = document.getElementById("tab-convert");
+  const btnHistory = document.getElementById("tab-history");
+  const btnMap = document.getElementById("tab-map");
 
-    function switchTab(tab) {
-      // hide all
-      if (convertTab) convertTab.style.display = 'none';
-      if (historyTab) historyTab.style.display = 'none';
-      const mapTabEl = document.getElementById('map-tab');
-      if (mapTabEl) mapTabEl.style.display = 'none';
+  function setActive(btnOn, ...btnOffList) {
+    btnOn?.classList.add("is-active");
+    btnOffList.forEach(b => b?.classList.remove("is-active"));
+  }
 
-      // show selected
-      if (tab === 'convert') {
-        if (convertTab) convertTab.style.display = '';
-        setActive(btnConvert, btnHistory, btnMap);
-      } else if (tab === 'history') {
-        if (historyTab) historyTab.style.display = '';
-        setActive(btnHistory, btnConvert, btnMap);
-        renderHistoryTable();
-      } else if (tab === 'map') {
-        console.log('Switching to map tab');
-        if (mapTabEl) {
-          mapTabEl.style.display = '';
-          console.log('Map tab made visible');
-        }
-        setActive(btnMap, btnConvert, btnHistory);
+  function switchTab(tab) {
+    // hide all
+    if (convertTab) convertTab.style.display = 'none';
+    if (historyTab) historyTab.style.display = 'none';
+    const mapTabEl = document.getElementById('map-tab');
+    if (mapTabEl) mapTabEl.style.display = 'none';
 
-        // Ensure map container has proper dimensions before initializing
-        const mapEl = document.getElementById('map');
-        if (mapEl) {
-          mapEl.style.width = '100%';
-          mapEl.style.height = '400px';
-          mapEl.style.minHeight = '400px';
-          console.log('Map container dimensions set:', mapEl.offsetWidth, 'x', mapEl.offsetHeight);
-        }
-
-        // Initialize map after making the container visible
-        setTimeout(() => {
-          console.log('Attempting to initialize map...');
-          if (!_map) {
-            if (!initMap()) {
-              console.error('Failed to initialize map');
-              // Try to show an error message
-              const mapEl = document.getElementById('map');
-              if (mapEl) {
-                mapEl.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">Failed to load map. Please check your internet connection and try again.</div>';
-              }
-              return;
-            }
-          }
-          // Always invalidate size when switching to map tab
-          if (_map && _map.invalidateSize) {
-            _map.invalidateSize(true);
-            console.log('Map size invalidated');
-          }
-        }, 100);
+    // show selected
+    if (tab === 'convert') {
+      if (convertTab) convertTab.style.display = '';
+      setActive(btnConvert, btnHistory, btnMap);
+    } else if (tab === 'history') {
+      if (historyTab) historyTab.style.display = '';
+      setActive(btnHistory, btnConvert, btnMap);
+      renderHistoryTable();
+    } else if (tab === 'map') {
+      console.log('Switching to map tab');
+      if (mapTabEl) {
+        mapTabEl.style.display = '';
+        console.log('Map tab made visible');
       }
+      setActive(btnMap, btnConvert, btnHistory);
+
+      const mapEl = document.getElementById('map');
+      if (mapEl) {
+        mapEl.style.width = '100%';
+        mapEl.style.height = '400px';
+        mapEl.style.minHeight = '400px';
+      }
+
+      setTimeout(() => {
+        if (!_map) initMap();
+        if (_map && _map.invalidateSize) {
+          _map.invalidateSize(true);
+        }
+      }, 100);
     }
+  }
 
-    btnConvert && (btnConvert.onclick = () => switchTab('convert'));
-    btnHistory && (btnHistory.onclick = () => switchTab('history'));
-    btnMap && (btnMap.onclick = () => switchTab('map'));
+  if (btnConvert) btnConvert.onclick = () => switchTab('convert');
+  if (btnHistory) btnHistory.onclick = () => switchTab('history');
+  if (btnMap) btnMap.onclick = () => switchTab('map');
 
-    // start on conversion tab
-    switchTab('convert');
+  // start on conversion tab
+  switchTab('convert');
 
-    // single conversions
-    document.getElementById("btn-dms2dd")?.addEventListener("click", convertDmsToDd);
-    document.getElementById("btn-dd2dms")?.addEventListener("click", convertDdToDms);
-    document.getElementById("btn-clear-dms")?.addEventListener("click", clearDmsInputs);
-    document.getElementById("btn-clear-dd")?.addEventListener("click", clearDdInputs);
-    document.getElementById("btn-swap")?.addEventListener("click", swapDd);
+  // single conversions
+  document.getElementById("btn-dms2dd")?.addEventListener("click", convertDmsToDd);
+  document.getElementById("btn-dd2dms")?.addEventListener("click", convertDdToDms);
+  document.getElementById("btn-clear-dms")?.addEventListener("click", clearDmsInputs);
+  document.getElementById("btn-clear-dd")?.addEventListener("click", clearDdInputs);
+  document.getElementById("btn-swap")?.addEventListener("click", swapDd);
 
-    // copy buttons
-    document.getElementById("copy-dd")?.addEventListener("click", () => copyText(document.getElementById("dd_result")?.value || ""));
-    document.getElementById("copy-dms")?.addEventListener("click", () => copyText(document.getElementById("dms_result")?.value || ""));
+  // copy buttons
+  document.getElementById("copy-dd")?.addEventListener("click", () => copyText(document.getElementById("dd_result")?.value || ""));
+  document.getElementById("copy-dms")?.addEventListener("click", () => copyText(document.getElementById("dms_result")?.value || ""));
 
-    // Show in Map buttons
-    document.getElementById("show-dd-map")?.addEventListener("click", () => showCurrentInMap('dd'));
-    document.getElementById("show-dms-map")?.addEventListener("click", () => showCurrentInMap('dms'));
+  // Show in Map buttons
+  document.getElementById("show-dd-map")?.addEventListener("click", () => showCurrentInMap('dd'));
+  document.getElementById("show-dms-map")?.addEventListener("click", () => showCurrentInMap('dms'));
 
-    // Map controls
-    document.getElementById('map-plot-all')?.addEventListener('click', () => {
-      const n = plotAllHistory();
-      if (n > 0) showFeedback(`Plotted ${n} points on the map`, 'success');
-      else showFeedback('No valid points to plot', 'info');
-    });
+  // Map controls
+  document.getElementById('map-plot-all')?.addEventListener('click', () => {
+    const n = plotAllHistory();
+    if (n > 0) showFeedback(`Plotted ${n} points on the map`, 'success');
+    else showFeedback('No valid points to plot', 'info');
+  });
 
-    document.getElementById('map-clear')?.addEventListener('click', () => {
-      clearMap();
-      showFeedback('Map cleared', 'info');
-    });
+  document.getElementById('map-clear')?.addEventListener('click', () => {
+    clearMap();
+    showFeedback('Map cleared', 'info');
+  });
 
-    // Export buttons
-    document.getElementById('export-geojson')?.addEventListener('click', () => exportHistoryAsGeoJSON('cordify_history.geojson'));
-    document.getElementById('export-kml')?.addEventListener('click', () => exportHistoryAsKml('cordify_history.kml'));
-    document.getElementById('export-kmz')?.addEventListener('click', () => exportHistoryAsKmz('cordify_history.kmz'));
+  // Export buttons
+  document.getElementById('export-geojson')?.addEventListener('click', () => exportHistoryAsGeoJSON('cordify_history.geojson'));
+  document.getElementById('export-kml')?.addEventListener('click', () => exportHistoryAsKml('cordify_history.kml'));
+  document.getElementById('export-kmz')?.addEventListener('click', () => exportHistoryAsKmz('cordify_history.kmz'));
 
-    // Enter key shortcuts
-    const dmsInputs = ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec","dms_lat_dir","dms_lon_dir"];
-    dmsInputs.forEach(id => document.getElementById(id)?.addEventListener("keydown", e => { if (e.key === "Enter") convertDmsToDd(); }));
-    ["dd_lat","dd_lon"].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => { if (e.key === "Enter") convertDdToDms(); }));
+  // Enter key shortcuts
+  const dmsInputs = ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec","dms_lat_dir","dms_lon_dir"];
+  dmsInputs.forEach(id => document.getElementById(id)?.addEventListener("keydown", e => { if (e.key === "Enter") convertDmsToDd(); }));
+  ["dd_lat","dd_lon"].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => { if (e.key === "Enter") convertDdToDms(); }));
 
-    // precision persistence
+  // precision persistence
+  try {
+    const pdd = localStorage.getItem("cordify_precision_dd");
+    if (pdd) document.getElementById("precision-dd").value = pdd;
+    const pdms = localStorage.getItem("cordify_precision_dms");
+    if (pdms) document.getElementById("precision-dms").value = pdms;
+  } catch {}
+  document.getElementById("precision-dd")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dd", e.target.value));
+  document.getElementById("precision-dms")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dms", e.target.value));
+
+  // remember inputs (session)
+  try {
+    const last = sessionStorage.getItem("cordify_last_inputs");
+    if (last) {
+      const v = JSON.parse(last);
+      ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec","dd_lat","dd_lon"].forEach(k=>{
+        if (v[k] !== undefined && document.getElementById(k)) document.getElementById(k).value = v[k];
+      });
+    }
+  } catch {}
+  document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
+
+  // -------- batch wiring --------
+  document.getElementById("batch-file")?.addEventListener("change", handleBatchFile);
+  document.getElementById("batch-format")?.addEventListener("change", onBatchFormatChange);
+  document.getElementById("batch-run")?.addEventListener("click", runBatch);
+  document.getElementById("batch-download-xlsx")?.addEventListener("click", () => downloadBatch("xlsx"));
+  document.getElementById("batch-download-csv")?.addEventListener("click", () => downloadBatch("csv"));
+  // history UI buttons
+  document.getElementById('history-export-json')?.addEventListener('click', () => {
     try {
-      const pdd = localStorage.getItem("cordify_precision_dd");
-      if (pdd) document.getElementById("precision-dd").value = pdd;
-      const pdms = localStorage.getItem("cordify_precision_dms");
-      if (pdms) document.getElementById("precision-dms").value = pdms;
-    } catch {}
-    document.getElementById("precision-dd")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dd", e.target.value));
-    document.getElementById("precision-dms")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dms", e.target.value));
-
-    // remember inputs (session)
-    try {
-      const last = sessionStorage.getItem("cordify_last_inputs");
-      if (last) {
-        const v = JSON.parse(last);
-        ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec","dd_lat","dd_lon"].forEach(k=>{
-          if (v[k] !== undefined && document.getElementById(k)) document.getElementById(k).value = v[k];
-        });
-      }
-    } catch {}
-    document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
-
-    // -------- batch wiring --------
-    document.getElementById("batch-file")?.addEventListener("change", handleBatchFile);
-    document.getElementById("batch-format")?.addEventListener("change", onBatchFormatChange);
-    document.getElementById("batch-run")?.addEventListener("click", runBatch);
-    document.getElementById("batch-download-xlsx")?.addEventListener("click", () => downloadBatch("xlsx"));
-    document.getElementById("batch-download-csv")?.addEventListener("click", () => downloadBatch("csv"));
-    // history UI buttons
-    document.getElementById('history-export-json')?.addEventListener('click', () => {
-      try {
-        const json = (window.historyStore && typeof window.historyStore.exportAll === 'function') ? window.historyStore.exportAll() : JSON.stringify(getHistory());
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'cordify_history.json'; document.body.appendChild(a); a.click(); setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 150);
-      } catch(e) { alert('Export failed'); }
-    });
-    document.getElementById('history-clear')?.addEventListener('click', () => {
-      if (!confirm('Clear all history?')) return;
-      clearHistory(); renderHistoryTable();
-    });
-    document.getElementById('history-migrate')?.addEventListener('click', () => { migrateHistoryToStore(); alert('Migration started (check console for errors).'); });
+      const json = (window.historyStore && typeof window.historyStore.exportAll === 'function') ? window.historyStore.exportAll() : JSON.stringify(getHistory());
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'cordify_history.json'; document.body.appendChild(a); a.click(); setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 150);
+    } catch(e) { alert('Export failed'); }
+  });
+  document.getElementById('history-clear')?.addEventListener('click', () => {
+    if (!confirm('Clear all history?')) return;
+    clearHistory(); renderHistoryTable();
+  });
+  document.getElementById('history-migrate')?.addEventListener('click', () => { migrateHistoryToStore(); alert('Migration started (check console for errors).'); });
 
   function persistInputs() {
     const keys = ["dms_lat_string","dms_lon_string","dms_lat_deg","dms_lat_min","dms_lat_sec","dms_lon_deg","dms_lon_min","dms_lon_sec","dd_lat","dd_lon"];
@@ -371,8 +332,7 @@ function initCordifyApp() {
     });
   }
 
-      // expose render renderer after function is defined
-      window._cordify_renderHistory = renderHistoryTable;
+  window._cordify_renderHistory = renderHistoryTable;
 
   // ---------- helpers ----------
   function escapeHtml(str) {
@@ -391,7 +351,7 @@ function initCordifyApp() {
     }
   }
 
-  // Export helpers available if you want to call from console
+  // Export helpers
   window._cordify_exportHistory = function exportHistory(type, rowIdx) {
     const arr = (function(){ try{ return getHistory(); }catch{ return []; }})();
     let data = arr;
@@ -408,7 +368,7 @@ function initCordifyApp() {
 
     if (type === "xlsx") {
       if (typeof XLSX === 'undefined') {
-        alert('Excel export requires the XLSX library (sheetjs). Please include it in index.html.');
+        alert('Excel export requires the XLSX library (sheetjs).');
       } else {
         try {
           const ws = XLSX.utils.json_to_sheet(exportArr);
@@ -438,7 +398,6 @@ function initCordifyApp() {
     }
   };
 
-  // make helpers available to outer scope
   window.clearCordifyHistory = clearHistory;
 })();
 
@@ -1137,5 +1096,5 @@ async function exportHistoryAsKmz(filename='history.kmz'){
   downloadBlob(filename, content);
 }
 /* ====================== END BATCH ====================== */
-})(); // End of main IIFE
-} // End of initCordifyApp function
+} // End of initCordifyApp
+
