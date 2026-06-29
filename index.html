@@ -6,6 +6,8 @@
 
   <link rel="stylesheet" href="./assets/css/styles.css">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4a90e2">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -21,7 +23,7 @@
 
   <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
 
-  <!-- Conversion Tab -->
+  
   <div id="convert-tab">
     <h4>DMS to DD</h4>
 
@@ -119,7 +121,7 @@
       </div>
     </div>
 
-    <!-- ================= Batch Convert (Excel/CSV) ================= -->
+    
     <hr>
     <h4>Batch Convert (Excel / CSV)</h4>
     <div class="small" style="margin-bottom:6px;">
@@ -164,7 +166,7 @@
       </div>
     </div>
 
-    <!-- Actions row is always visible -->
+    
     <div class="inline" id="batch-actions" style="margin:6px 0 10px;">
       <button class="btn-primary" id="batch-run" type="button">Convert (Run Batch)</button>
       <button id="batch-download-xlsx" type="button">Download XLSX</button>
@@ -179,12 +181,12 @@
         <tbody id="batch-body"></tbody>
       </table>
     </div>
-    <!-- ================= End Batch ================= -->
+    
 
   </div>
-  <!-- /#convert-tab -->
+  
 
-  <!-- History (read-only) -->
+  
   <div id="history-tab" style="display:none;">
     <div style="margin:8px 0; display:flex; gap:8px; align-items:center;">
       <p id="history-empty" style="margin:0;">No history yet.</p>
@@ -210,7 +212,7 @@
 
 </div>
 
-  <!-- Map Tab -->
+  
   <div id="map-tab" class="tab-pane" style="display:none;">
     <div class="card">
       <div class="map-controls">
@@ -226,15 +228,15 @@
     </div>
   </div>
 
-  <!-- Map & GIS libraries -->
+  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.1/proj4.js" integrity="sha512-X8mXY0+r1h7SrCJ1e9CxIjYzOT+GbWHoYWD8vvLj6IHXHETYI7uIdWRmpKfY5wLMc8oYCJT+dwvNVnbWbPJx7w==" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha256-Qlg+23SUclRDZjYeMQvVv1bBxhzaF9pXN4TvMtjXFyM=" crossorigin="anonymous"></script>
-  <!-- use known-good SheetJS CDN (avoids some MIME issues on certain hosts) -->
-  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="./assets/js/historyStore.js"></script>
-  <script src="./assets/js/app.js?v=8"></script>
+  <script src="./assets/js/app.js?v=9"></script>
 
 <script>
   if ('serviceWorker' in navigator) {
