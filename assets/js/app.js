@@ -1,9 +1,9 @@
 function initializeApp() {
-  // Leaflet is loaded from a CDN and may not be ready yet; retry until it is.
-  if (typeof L === "undefined") {
-    setTimeout(initializeApp, 100);
-    return;
-  }
+  // Initialize immediately. The converter, history, and batch tools do NOT
+  // depend on Leaflet; the map is created lazily when the Map tab is first
+  // opened (see initMap, which guards for a missing L). Gating startup on the
+  // map CDN previously left every button dead whenever Leaflet was slow,
+  // blocked, or offline.
   initCordifyApp();
 }
 
