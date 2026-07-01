@@ -1,22 +1,9 @@
 function initializeApp() {
-  void 0;
+  // Leaflet is loaded from a CDN and may not be ready yet; retry until it is.
   if (typeof L === "undefined") {
-    void 0;
     setTimeout(initializeApp, 100);
     return;
   }
-  void 0;
-  if (typeof XLSX === "undefined") {
-    void 0;
-  } else {
-    void 0;
-  }
-  if (typeof JSZip === "undefined") {
-    void 0;
-  } else {
-    void 0;
-  }
-  void 0;
   initCordifyApp();
 }
 
@@ -163,7 +150,6 @@ function initCordifyApp() {
           localStorage.removeItem(OLD_KEY);
         } catch (e) {}
       } catch (e) {
-        void 0;
       }
     }
     try {
@@ -221,10 +207,8 @@ function initCordifyApp() {
           setActive(btnHistory, btnConvert, btnMap);
           renderHistoryTable();
         } else if (tab === "map") {
-          void 0;
           if (mapTabEl) {
             mapTabEl.style.display = "";
-            void 0;
           }
           setActive(btnMap, btnConvert, btnHistory);
           const mapEl = document.getElementById("map");
@@ -232,13 +216,10 @@ function initCordifyApp() {
             mapEl.style.width = "100%";
             mapEl.style.height = "400px";
             mapEl.style.minHeight = "400px";
-            void 0;
           }
           setTimeout(() => {
-            void 0;
             if (!_map) {
               if (!initMap()) {
-                void 0;
                 const mapEl = document.getElementById("map");
                 if (mapEl) {
                   mapEl.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">Failed to load map. Please check your internet connection and try again.</div>';
@@ -248,7 +229,6 @@ function initCordifyApp() {
             }
             if (_map && _map.invalidateSize) {
               _map.invalidateSize(true);
-              void 0;
             }
           }, 100);
         }
@@ -397,7 +377,6 @@ function initCordifyApp() {
             try {
               showHistoryItemOnMap(item.id ?? i);
             } catch (e) {
-              void 0;
             }
           });
           const exportBtn = document.createElement("button");
@@ -408,7 +387,6 @@ function initCordifyApp() {
             try {
               window._cordify_exportHistory && window._cordify_exportHistory("csv", i);
             } catch (e) {
-              void 0;
             }
           });
           const delBtn = document.createElement("button");
@@ -944,35 +922,28 @@ function initCordifyApp() {
         return true;
       }
       if (typeof L === "undefined") {
-        void 0;
         return false;
       }
       if (!L.map || !L.tileLayer || !L.layerGroup) {
-        void 0;
         return false;
       }
       const el = document.getElementById("map");
       if (!el) {
-        void 0;
         return false;
       }
       const mapTab = document.getElementById("map-tab");
       if (!mapTab) {
-        void 0;
         return false;
       }
       if (mapTab.style.display === "none") {
-        void 0;
         mapTab.style.display = "";
       }
       if (el.offsetWidth === 0 || el.offsetHeight === 0) {
-        void 0;
         el.style.width = "100%";
         el.style.height = "400px";
         el.style.minHeight = "400px";
       }
       try {
-        void 0;
         _map = L.map(el, {
           attributionControl: true,
           preferCanvas: false
@@ -982,16 +953,13 @@ function initCordifyApp() {
           maxZoom: 19,
           attribution: "© OpenStreetMap contributors"
         }).addTo(_map);
-        void 0;
         setTimeout(() => {
           if (_map && _map.invalidateSize) {
             _map.invalidateSize(true);
-            void 0;
           }
         }, 100);
         return true;
       } catch (e) {
-        void 0;
         _map = null;
         _mapLayerGroup = null;
         return false;
@@ -1028,7 +996,6 @@ function initCordifyApp() {
         m.openPopup();
         return m;
       } catch (e) {
-        void 0;
         showFeedback("Failed to show point on map", "error");
         return null;
       }
@@ -1062,7 +1029,6 @@ function initCordifyApp() {
     function showCurrentInMap(type) {
       const resultEl = document.getElementById(type === "dd" ? "dd_result" : "dms_result");
       if (!resultEl) {
-        void 0;
         showFeedback("Result element not found", "error");
         return;
       }
@@ -1078,7 +1044,6 @@ function initCordifyApp() {
       }
       const mapTabBtn = document.getElementById("tab-map");
       if (!mapTabBtn) {
-        void 0;
         showFeedback("Map tab not available", "error");
         return;
       }
@@ -1120,7 +1085,6 @@ function initCordifyApp() {
       }
       const mapTabBtn = document.getElementById("tab-map");
       if (!mapTabBtn) {
-        void 0;
         return;
       }
       mapTabBtn.click();
