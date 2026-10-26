@@ -8,6 +8,7 @@
 <body>
   <h1>History Store Tests</h1>
   <pre id="out"></pre>
+  <script>window.CORDIFY_HISTORY_KEY = "cordify_history_test";</script>
   <script src="../assets/js/historyStore.js"></script>
   <script>
     (function(){
@@ -15,7 +16,7 @@
 
       function expect(name, cond){ log((cond?'PASS':'FAIL')+':', name); }
 
-      // Clear clean state
+      // Clear clean state (test key only - real history is untouched)
       historyStore.clear();
 
       // add up to more than cap

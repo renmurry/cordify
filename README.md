@@ -20,7 +20,7 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
 - **Export** — save your points as GeoJSON, KML, or KMZ for use in Google Earth
   and GIS tools.
 - **Installable (PWA)** — can be added to your home screen / desktop and works
-  offline.
+  offline after the first visit (map tiles still need internet).
 
 ## How to use it
 
@@ -64,4 +64,5 @@ Plain HTML, CSS, and JavaScript (no build step). External libraries are loaded
 from CDNs: [Leaflet](https://leafletjs.com/) (maps),
 [SheetJS](https://sheetjs.com/) (Excel/CSV),
 [JSZip](https://stuk.github.io/jszip/) (KMZ), and
-[proj4js](http://proj4js.org/) (projections).
+[proj4js](http://proj4js.org/) (projections). Versions are pinned in
+`index.html` and must match the `CDN_ASSETS` list in `service-worker.js`.
