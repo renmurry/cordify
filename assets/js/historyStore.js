@@ -1,5 +1,6 @@
 (function() {
-  const KEY = "cordify_history_v2";
+  // Tests set window.CORDIFY_HISTORY_KEY first so they never touch real history.
+  const KEY = window.CORDIFY_HISTORY_KEY || "cordify_history_v2";
   let CAP = 200;
   function uid() {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
