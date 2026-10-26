@@ -25,12 +25,14 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
 ## How to use it
 
 1. Open the live site (link above).
-2. On the **Conversion** tab, type coordinates into either the DMS or DD section
-   and press **Convert** (or hit Enter). Use **Copy** to grab the result or
-   **Show in Map** to see it plotted.
-3. For many rows at once, scroll to **Batch Convert**, upload a file, choose
-   your columns and direction, click **Run Batch**, then download.
-4. The **History** and **Map** tabs let you revisit and visualize past work.
+2. On the **Convert** tab, type into either tool, or paste a whole pair such as
+   `12°34'56" N, 77°35'12" E` or `12.58, 77.59`. The result updates as you
+   type. Press **Enter** or **Save to history** to keep it. Use **Copy** to grab
+   the result or **Show on map** to see it plotted.
+3. For many rows at once, scroll to **Batch convert**, upload a file, choose
+   your columns and direction, click **Convert all rows**, then download.
+4. The **History** and **Map** tabs let you revisit and visualize past work. The
+   map fills the screen; Plot all, Clear and Export float in its corner.
 
 Everything runs entirely in your browser — no data is sent to any server.
 
