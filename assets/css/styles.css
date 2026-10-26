@@ -28,6 +28,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
@@ -84,14 +85,35 @@ h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 440px) { .field-row { grid-template-columns: 1fr; gap: 0; } }
 
-input[type="text"], select {
+input[type="text"], input[type="number"], select {
   font: inherit; color: var(--ink);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
 }
-input[type="text"] { width: 100%; font-variant-numeric: tabular-nums; }
+input[type="text"], input[type="number"] { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+
+/* Text / Boxes switch (same look as the header tabs) */
+.mode-switch { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg); border-radius: 10px; }
+.seg label {
+  position: relative; cursor: pointer;
+  padding: 4px 12px; border-radius: 8px;
+  font-size: .8125rem; font-weight: 600; color: var(--muted);
+}
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Separate deg / min / sec boxes */
+.dms-boxes { margin-bottom: 12px; }
+.dms-boxes > .field-label { display: block; margin-bottom: 4px; }
+.box-inputs { display: grid; grid-template-columns: 1fr 1fr 1.3fr auto; gap: 8px; align-items: center; }
+.box-inputs label { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.box-inputs label span { color: var(--muted); font-weight: 600; }
+.dms-boxes.invalid { box-shadow: none; }
+.dms-boxes.invalid input, .dms-boxes.invalid select { border-color: var(--danger); }
 input::placeholder { color: var(--muted); opacity: .7; }
 input[type="file"] { font: inherit; font-size: .875rem; max-width: 100%; color: var(--muted); }
 input[type="file"]::file-selector-button {

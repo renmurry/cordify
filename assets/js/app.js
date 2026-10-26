@@ -247,7 +247,21 @@ function initCordifyApp() {
         document.getElementById("dd_pair").value = "";
         updateDdResult(false);
       }));
-      [ "dms_pair", "dms_lat_string", "dms_lon_string" ].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => {
+      // Boxes mode: typing in deg/min/sec/N-S writes the Latitude/Longitude text, then converts.
+      [ "lat", "lon" ].forEach(kind => boxIds()[kind].forEach(id => {
+        const el = document.getElementById(id);
+        const onEdit = () => {
+          document.getElementById(kind === "lat" ? "dms_lat_string" : "dms_lon_string").value = boxesToText(kind);
+          document.getElementById("dms_pair").value = "";
+          updateDmsResult(false);
+        };
+        el?.addEventListener("input", onEdit);
+        if (el?.tagName === "SELECT") {
+          el.addEventListener("change", onEdit);
+        }
+      }));
+      document.querySelectorAll('input[name="dms-mode"]').forEach(r => r.addEventListener("change", e => setDmsMode(e.target.value)));
+      [ "dms_pair", "dms_lat_string", "dms_lon_string", ...boxIds().lat, ...boxIds().lon ].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => {
         if (e.key === "Enter") {
           updateDmsResult(true);
         }
@@ -315,6 +329,11 @@ function initCordifyApp() {
       } catch {}
       updateDmsResult(false);
       updateDdResult(false);
+      try {
+        setDmsMode(localStorage.getItem("cordify_dms_mode") === "boxes" ? "boxes" : "text", false);
+      } catch {
+        setDmsMode("text", false);
+      }
       document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
       document.getElementById("batch-file")?.addEventListener("change", handleBatchFile);
       document.getElementById("batch-format")?.addEventListener("change", () => {
@@ -681,6 +700,72 @@ function initCordifyApp() {
       parts = parts.map(clean);
       return parts.length === 2 && parts[0] && parts[1] ? parts : null;
     }
+    // A function (not a const) so the startup code above can use it before this line runs.
+    function boxIds() {
+      return {
+        lat: [ "dms_lat_deg", "dms_lat_min", "dms_lat_sec", "dms_lat_dir" ],
+        lon: [ "dms_lon_deg", "dms_lon_min", "dms_lon_sec", "dms_lon_dir" ]
+      };
+    }
+    // Boxes -> text such as 12° 34' 56.7" N. A minus on degrees, or S/W, makes it negative.
+    function boxesToText(kind) {
+      const [ d, m, sec, dir ] = boxIds()[kind].map(id => document.getElementById(id));
+      const dv = d.value.trim(), mv = m.value.trim(), sv = sec.value.trim();
+      if (!dv && !mv && !sv) {
+        return "";
+      }
+      return `${dv || 0}° ${mv || 0}' ${sv || 0}" ${dir.value}`;
+    }
+    // Text -> boxes (used when switching to Boxes, pasting a pair, clearing, reloading).
+    function textToBoxes(kind) {
+      const [ d, m, sec, dir ] = boxIds()[kind].map(id => document.getElementById(id));
+      if (!d) {
+        return;
+      }
+      const str = fieldValue(kind === "lat" ? "dms_lat_string" : "dms_lon_string");
+      if (!str) {
+        d.value = m.value = sec.value = "";
+        dir.value = kind === "lat" ? "N" : "E";
+        return;
+      }
+      const v = parseCoord(str, kind);
+      if (v === null) {
+        return;
+      }
+      const f = 1e4;
+      const units = Math.round(Math.abs(v) * 3600 * f);
+      const deg = Math.floor(units / (3600 * f));
+      const min = Math.floor((units - deg * 3600 * f) / (60 * f));
+      const s = (units - deg * 3600 * f - min * 60 * f) / f;
+      const neg = units > 0 && v < 0;
+      d.value = String(deg);
+      m.value = String(min);
+      sec.value = String(+s.toFixed(4));
+      dir.value = kind === "lat" ? neg ? "S" : "N" : neg ? "W" : "E";
+    }
+    function setDmsMode(mode, remember = true) {
+      const boxes = mode === "boxes";
+      const textEl = document.getElementById("dms-text-fields");
+      const boxEl = document.getElementById("dms-box-fields");
+      if (!textEl || !boxEl) {
+        return;
+      }
+      textEl.hidden = boxes;
+      boxEl.hidden = !boxes;
+      const radio = document.querySelector(`input[name="dms-mode"][value="${boxes ? "boxes" : "text"}"]`);
+      if (radio) {
+        radio.checked = true;
+      }
+      if (boxes) {
+        textToBoxes("lat");
+        textToBoxes("lon");
+      }
+      if (remember) {
+        try {
+          localStorage.setItem("cordify_dms_mode", boxes ? "boxes" : "text");
+        } catch {}
+      }
+    }
     // Pair field -> fills the separate Latitude / Longitude fields, then converts.
     function applyPair(card) {
       const isDms = card === "dms";
@@ -710,6 +795,10 @@ function initCordifyApp() {
       }
       document.getElementById(latId).value = a;
       document.getElementById(lonId).value = b;
+      if (isDms) {
+        textToBoxes("lat");
+        textToBoxes("lon");
+      }
       return update(false);
     }
     function saveResult(rec) {
@@ -727,6 +816,8 @@ function initCordifyApp() {
       const lon = lonStr ? parseCoord(lonStr, "lon") : null;
       setInvalid("dms_lat_string", latStr && lat === null);
       setInvalid("dms_lon_string", lonStr && lon === null);
+      setInvalid("dms_lat_boxes", latStr && lat === null);
+      setInvalid("dms_lon_boxes", lonStr && lon === null);
       let err = "";
       if (latStr && lat === null) {
         err = "Latitude not recognised. Use N or S, up to 90°, minutes and seconds under 60.";
@@ -805,6 +896,8 @@ function initCordifyApp() {
           el.classList.remove("invalid");
         }
       });
+      textToBoxes("lat");
+      textToBoxes("lon");
       updateDmsResult(false);
       window._cordify_persistInputs && window._cordify_persistInputs();
     }
