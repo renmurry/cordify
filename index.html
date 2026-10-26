@@ -2,233 +2,218 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Coordinate Converter (DMS ⇄ DD)</title>
+  <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=2">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#4a90e2">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0e5f5c">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 </head>
 <body>
-<div class="container">
+<div class="app">
 
-  <nav style="margin-bottom: 1em;">
-    <button id="tab-convert" class="tab-btn is-active" type="button">Conversion</button>
-    <button id="tab-map" class="tab-btn" type="button">Map</button>
-    <button id="tab-history" class="tab-btn" type="button">History</button>
-  </nav>
-
-  <h3>Coordinate Converter (Latitude &amp; Longitude)</h3>
-
-  
-  <div id="convert-tab">
-    <h4>DMS to DD</h4>
-
-    <div class="small inline" style="margin: 4px 0 8px;">
-      <span>Precision (DD):</span>
-      <select id="precision-dd">
-        <option value="6" selected>6</option>
-        <option value="5">5</option>
-        <option value="4">4</option>
-        <option value="3">3</option>
-      </select>
-      <span class="small">Press <b>Enter</b> in inputs to convert</span>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-name">Cordify</span>
+      <span class="brand-sub">DMS ⇄ decimal degrees</span>
     </div>
+    <nav class="tabs" aria-label="Sections">
+      <button id="tab-convert" class="tab-btn is-active" type="button">Convert</button>
+      <button id="tab-map" class="tab-btn" type="button">Map</button>
+      <button id="tab-history" class="tab-btn" type="button">History</button>
+    </nav>
+  </header>
 
-    <div class="row">
-      <label>Latitude DMS:
-        <input id="dms_lat_string" type="text" placeholder='e.g. 12°34&#39;56.7&quot; N or -12 34 56.7' aria-label="Latitude DMS">
-      </label>
-    </div>
-    <div class="row">
-      <label>Longitude DMS:
-        <input id="dms_lon_string" type="text" placeholder='e.g. 77°35&#39;12&quot; E or -77 35 12' aria-label="Longitude DMS">
-      </label>
-    </div>
-    <div class="error" id="err-dms">Invalid DMS input. Check ranges (min&lt;60, sec&lt;60) and use N/S/E/W correctly.</div>
+  <main class="app-main">
 
-    <hr style="margin-top:12px; margin-bottom:12px;">
+    <div id="convert-tab" class="page">
+      <div class="tools">
 
-    <div class="row">
-      <b>Latitude (Y):</b>
-      <label>° <input id="dms_lat_deg" type="number" step="1" placeholder="deg" aria-label="Lat degrees" ></label>
-      <label>' <input id="dms_lat_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Lat minutes"></label>
-      <label>" <input id="dms_lat_sec" type="number" step="any" min="0" max="59.9999" placeholder="sec" aria-label="Lat seconds"></label>
-      <select id="dms_lat_dir" aria-label="Lat direction">
-        <option value="N">N</option><option value="S">S</option>
-      </select>
-    </div>
-    <div class="row">
-      <b>Longitude (X):</b>
-      <label>° <input id="dms_lon_deg" type="number" step="1" placeholder="deg" aria-label="Lon degrees"></label>
-      <label>' <input id="dms_lon_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Lon minutes"></label>
-      <label>" <input id="dms_lon_sec" type="number" step="any" min="0" max="59.9999" placeholder="sec" aria-label="Lon seconds"></label>
-      <select id="dms_lon_dir" aria-label="Lon direction">
-        <option value="E">E</option><option value="W">W</option>
-      </select>
-    </div>
+        <section class="card tool" aria-labelledby="dms-title">
+          <div class="card-head">
+            <h2 id="dms-title">DMS → DD</h2>
+            <label class="precision">Decimals
+              <select id="precision-dd">
+                <option value="6" selected>6</option>
+                <option value="5">5</option>
+                <option value="4">4</option>
+                <option value="3">3</option>
+              </select>
+            </label>
+          </div>
 
-    <div class="inline" style="margin:6px 0 10px;">
-      <button class="btn-primary" type="button" id="btn-dms2dd">Convert to DD</button>
-      <button type="button" id="btn-clear-dms" title="Clear DMS inputs">Clear</button>
-    </div>
+          <label class="field">
+            <span class="field-label">Paste a pair</span>
+            <input id="dms_pair" type="text" autocomplete="off" spellcheck="false" placeholder='12°34&#39;56.7&quot; N, 77°35&#39;12&quot; E'>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Latitude</span>
+              <input id="dms_lat_string" type="text" autocomplete="off" spellcheck="false" placeholder='12°34&#39;56.7&quot; N'>
+            </label>
+            <label class="field">
+              <span class="field-label">Longitude</span>
+              <input id="dms_lon_string" type="text" autocomplete="off" spellcheck="false" placeholder='77°35&#39;12&quot; E'>
+            </label>
+          </div>
+          <div class="error" id="err-dms" role="alert"></div>
 
-    <div class="copy-wrap">
-      <textarea class="result" id="dd_result" readonly></textarea>
-      <div class="result-actions">
-        <button type="button" class="copy-btn" id="copy-dd">Copy</button>
-        <button type="button" class="map-btn" id="show-dd-map">Show in Map</button>
-      </div>
-    </div>
+          <textarea class="result" id="dd_result" readonly rows="2" aria-label="Decimal degrees result" placeholder="The result appears here as you type"></textarea>
 
-    <hr>
+          <div class="actions">
+            <button class="btn-primary" type="button" id="btn-dms2dd" title="Or press Enter">Save to history</button>
+            <button type="button" class="copy-btn" id="copy-dd">Copy</button>
+            <button type="button" class="map-btn" id="show-dd-map">Show on map</button>
+            <button type="button" class="btn-quiet" id="btn-clear-dms">Clear</button>
+          </div>
+        </section>
 
-    <h4>DD to DMS</h4>
-    <div class="small inline" style="margin: 4px 0 8px;">
-      <span>Precision (seconds):</span>
-      <select id="precision-dms">
-        <option value="3" selected>3</option>
-        <option value="2">2</option>
-        <option value="1">1</option>
-        <option value="0">0</option>
-      </select>
-    </div>
+        <section class="card tool" aria-labelledby="dd-title">
+          <div class="card-head">
+            <h2 id="dd-title">DD → DMS</h2>
+            <label class="precision">Seconds decimals
+              <select id="precision-dms">
+                <option value="3" selected>3</option>
+                <option value="2">2</option>
+                <option value="1">1</option>
+                <option value="0">0</option>
+              </select>
+            </label>
+          </div>
 
-    <div class="row">
-      <b>Latitude (Y):</b>
-      <label>DD <input id="dd_lat" type="number" step="any" placeholder="e.g. 12.58242" aria-label="Latitude DD"></label>
-    </div>
-    <div class="row">
-      <b>Longitude (X):</b>
-      <label>DD <input id="dd_lon" type="number" step="any" placeholder="e.g. 77.58667" aria-label="Longitude DD"></label>
-    </div>
-    <div class="error" id="err-dd">Enter valid DD (Lat −90..90, Lon −180..180)</div>
+          <label class="field">
+            <span class="field-label">Paste a pair</span>
+            <input id="dd_pair" type="text" autocomplete="off" spellcheck="false" placeholder="12.582417, 77.586667">
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Latitude</span>
+              <input id="dd_lat" type="text" inputmode="decimal" autocomplete="off" placeholder="12.582417">
+            </label>
+            <label class="field">
+              <span class="field-label">Longitude</span>
+              <input id="dd_lon" type="text" inputmode="decimal" autocomplete="off" placeholder="77.586667">
+            </label>
+          </div>
+          <div class="error" id="err-dd" role="alert"></div>
 
-    <div class="inline" style="margin:6px 0 10px;">
-      <button class="btn-primary" type="button" id="btn-dd2dms">Convert to DMS</button>
-      <button type="button" id="btn-clear-dd" title="Clear DD inputs">Clear</button>
-      <button type="button" id="btn-swap" title="Swap lat/lon">Swap</button>
-    </div>
+          <textarea class="result" id="dms_result" readonly rows="2" aria-label="DMS result" placeholder="The result appears here as you type"></textarea>
 
-    <div class="copy-wrap">
-      <textarea class="result" id="dms_result" readonly></textarea>
-      <div class="result-actions">
-        <button type="button" class="copy-btn" id="copy-dms">Copy</button>
-        <button type="button" class="map-btn" id="show-dms-map">Show in Map</button>
-      </div>
-    </div>
+          <div class="actions">
+            <button class="btn-primary" type="button" id="btn-dd2dms" title="Or press Enter">Save to history</button>
+            <button type="button" class="copy-btn" id="copy-dms">Copy</button>
+            <button type="button" class="map-btn" id="show-dms-map">Show on map</button>
+            <button type="button" class="btn-quiet" id="btn-swap" title="Swap latitude and longitude">Swap</button>
+            <button type="button" class="btn-quiet" id="btn-clear-dd">Clear</button>
+          </div>
+        </section>
 
-    
-    <hr>
-    <h4>Batch Convert (Excel / CSV)</h4>
-    <div class="small" style="margin-bottom:6px;">
-      Upload a file, pick columns, choose direction, then export.
-    </div>
-
-    <div class="row">
-      <input type="file" id="batch-file" accept=".xlsx,.xls,.csv" />
-      <label class="inline">Direction:
-        <select id="batch-direction">
-          <option value="DD2DMS">DD → DMS</option>
-          <option value="DMS2DD">DMS → DD</option>
-        </select>
-      </label>
-      <label class="inline">Input format:
-        <select id="batch-format">
-          <option value="dd-columns">DD columns</option>
-          <option value="dms-strings">DMS string columns</option>
-        </select>
-      </label>
-    </div>
-
-    <div id="batch-mapping" class="row" style="display:none;">
-      <div id="map-dd" class="inline">
-        <span class="small">DD columns:</span>
-        <label>Lat:
-          <select id="map-dd-lat"></select>
-        </label>
-        <label>Lon:
-          <select id="map-dd-lon"></select>
-        </label>
       </div>
 
-      <div id="map-dms" class="inline" style="display:none;">
-        <span class="small">DMS string columns:</span>
-        <label>Lat DMS:
-          <select id="map-dms-lat"></select>
-        </label>
-        <label>Lon DMS:
-          <select id="map-dms-lon"></select>
-        </label>
-      </div>
-    </div>
-
-    
-    <div class="inline" id="batch-actions" style="margin:6px 0 10px;">
-      <button class="btn-primary" id="batch-run" type="button">Convert (Run Batch)</button>
-      <button id="batch-download-xlsx" type="button">Download XLSX</button>
-      <button id="batch-download-csv" type="button">Download CSV</button>
-      <span class="small" id="batch-status"></span>
-    </div>
-
-    <div id="batch-preview-wrap" style="display:none;">
-      <div class="small" style="margin:6px 0;">Preview (first 20 rows)</div>
-      <table class="table" id="batch-preview" style="width:100%;">
-        <thead><tr id="batch-head"></tr></thead>
-        <tbody id="batch-body"></tbody>
-      </table>
-    </div>
-    
-
-  </div>
-  
-
-  
-  <div id="history-tab" style="display:none;">
-    <div style="margin:8px 0; display:flex; gap:8px; align-items:center;">
-      <p id="history-empty" style="margin:0;">No history yet.</p>
-      <div style="margin-left:auto;">
-        <button id="history-export-json" type="button">Export All (JSON)</button>
-        <button id="history-clear" type="button">Clear History</button>
-        <button id="history-migrate" type="button">Migrate Legacy</button>
-      </div>
-    </div>
-    <table id="history-table" class="table" style="display:none; width:100%;">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Input</th>
-          <th>Result</th>
-          <th>Date</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-
-  
-  <div id="map-tab" class="tab-pane" style="display:none;">
-    <div class="card">
-      <div class="map-controls">
-        <button id="map-plot-all" type="button">Plot All Points</button>
-        <button id="map-clear" type="button">Clear Map</button>
-        <div class="map-export">
-          <button id="export-geojson" type="button">Export GeoJSON</button>
-          <button id="export-kml" type="button">Export KML</button>
-          <button id="export-kmz" type="button">Export KMZ</button>
+      <section class="card batch" aria-labelledby="batch-title">
+        <div class="card-head">
+          <h2 id="batch-title">Batch convert</h2>
+          <span class="hint">Excel or CSV: upload, pick columns, convert, download.</span>
         </div>
-      </div>
-      <div id="map"></div>
-    </div>
-  </div>
 
+        <div class="batch-controls">
+          <input type="file" id="batch-file" accept=".xlsx,.xls,.csv" />
+          <label class="inline">Direction
+            <select id="batch-direction">
+              <option value="DD2DMS">DD → DMS</option>
+              <option value="DMS2DD">DMS → DD</option>
+            </select>
+          </label>
+          <label class="inline">Input format
+            <select id="batch-format">
+              <option value="dd-columns">DD columns</option>
+              <option value="dms-strings">DMS string columns</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="batch-mapping" class="batch-controls" style="display:none;">
+          <div id="map-dd" class="inline">
+            <span class="hint">DD columns:</span>
+            <label>Lat <select id="map-dd-lat"></select></label>
+            <label>Lon <select id="map-dd-lon"></select></label>
+          </div>
+          <div id="map-dms" class="inline" style="display:none;">
+            <span class="hint">DMS string columns:</span>
+            <label>Lat <select id="map-dms-lat"></select></label>
+            <label>Lon <select id="map-dms-lon"></select></label>
+          </div>
+        </div>
+
+        <div class="actions" id="batch-actions" style="display:none;">
+          <button class="btn-primary" id="batch-run" type="button">Convert all rows</button>
+          <button id="batch-download-xlsx" type="button">Download XLSX</button>
+          <button id="batch-download-csv" type="button">Download CSV</button>
+          <span class="hint" id="batch-status"></span>
+        </div>
+
+        <div id="batch-preview-wrap" style="display:none;">
+          <div class="hint">Preview (first 20 rows)</div>
+          <div class="table-wrap">
+            <table class="table" id="batch-preview">
+              <thead><tr id="batch-head"></tr></thead>
+              <tbody id="batch-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="history-tab" class="page" style="display:none;">
+      <section class="card">
+        <div class="card-head">
+          <h2>History</h2>
+          <div class="actions">
+            <button id="history-export-json" type="button">Export all (JSON)</button>
+            <button id="history-clear" type="button" class="btn-quiet">Clear history</button>
+            <button id="history-migrate" type="button" class="btn-quiet">Migrate legacy</button>
+          </div>
+        </div>
+        <p id="history-empty" class="empty">No saved conversions yet. Convert a coordinate and press Enter or “Save to history”.</p>
+        <div class="table-wrap">
+          <table id="history-table" class="table" style="display:none;">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Input</th>
+                <th>Result</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div id="map-tab" style="display:none;">
+      <div id="map"></div>
+      <div class="map-fab" role="toolbar" aria-label="Map tools">
+        <button id="map-plot-all" type="button">Plot all</button>
+        <button id="map-clear" type="button">Clear</button>
+        <details class="fab-menu" id="map-export-menu">
+          <summary>Export</summary>
+          <div class="fab-menu-list">
+            <button id="export-geojson" type="button">GeoJSON</button>
+            <button id="export-kml" type="button">KML</button>
+            <button id="export-kmz" type="button">KMZ</button>
+          </div>
+        </details>
+      </div>
+    </div>
+
+  </main>
 </div>
 
-  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/proj4@2.8.1/dist/proj4.js" integrity="sha512-aIqYhZWmKBmfxEcdqUuqln8wMYFvGUKw4sqfjNcCoEQgx2iZF26+ikx0kz35uHjwpejMeHCcfHUpCtkohi2raw==" crossorigin="anonymous"></script>
@@ -236,7 +221,7 @@
   
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="./assets/js/historyStore.js"></script>
-  <script src="./assets/js/app.js?v=11"></script>
+  <script src="./assets/js/app.js?v=12"></script>
 
 <script>
   if ('serviceWorker' in navigator) {
