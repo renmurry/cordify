@@ -211,12 +211,6 @@ function initCordifyApp() {
             mapTabEl.style.display = "";
           }
           setActive(btnMap, btnConvert, btnHistory);
-          const mapEl = document.getElementById("map");
-          if (mapEl) {
-            mapEl.style.width = "100%";
-            mapEl.style.height = "400px";
-            mapEl.style.minHeight = "400px";
-          }
           setTimeout(() => {
             if (!_map) {
               if (!initMap()) {
@@ -237,11 +231,36 @@ function initCordifyApp() {
       btnHistory && (btnHistory.onclick = () => switchTab("history"));
       btnMap && (btnMap.onclick = () => switchTab("map"));
       switchTab("convert");
-      document.getElementById("btn-dms2dd")?.addEventListener("click", convertDmsToDd);
-      document.getElementById("btn-dd2dms")?.addEventListener("click", convertDdToDms);
+      document.getElementById("btn-dms2dd")?.addEventListener("click", () => updateDmsResult(true));
+      document.getElementById("btn-dd2dms")?.addEventListener("click", () => updateDdResult(true));
       document.getElementById("btn-clear-dms")?.addEventListener("click", clearDmsInputs);
       document.getElementById("btn-clear-dd")?.addEventListener("click", clearDdInputs);
       document.getElementById("btn-swap")?.addEventListener("click", swapDd);
+      // Live conversion: results update as you type; Enter or "Save to history" saves.
+      document.getElementById("dms_pair")?.addEventListener("input", () => applyPair("dms"));
+      document.getElementById("dd_pair")?.addEventListener("input", () => applyPair("dd"));
+      [ "dms_lat_string", "dms_lon_string" ].forEach(id => document.getElementById(id)?.addEventListener("input", () => {
+        document.getElementById("dms_pair").value = "";
+        updateDmsResult(false);
+      }));
+      [ "dd_lat", "dd_lon" ].forEach(id => document.getElementById(id)?.addEventListener("input", () => {
+        document.getElementById("dd_pair").value = "";
+        updateDdResult(false);
+      }));
+      [ "dms_pair", "dms_lat_string", "dms_lon_string" ].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => {
+        if (e.key === "Enter") {
+          updateDmsResult(true);
+        }
+      }));
+      [ "dd_pair", "dd_lat", "dd_lon" ].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => {
+        if (e.key === "Enter") {
+          updateDdResult(true);
+        }
+      }));
+      const exportMenu = document.getElementById("map-export-menu");
+      exportMenu?.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+        exportMenu.open = false;
+      }));
       document.getElementById("copy-dd")?.addEventListener("click", () => copyText(document.getElementById("dd_result")?.value || ""));
       document.getElementById("copy-dms")?.addEventListener("click", () => copyText(document.getElementById("dms_result")?.value || ""));
       document.getElementById("show-dd-map")?.addEventListener("click", () => showCurrentInMap("dd"));
@@ -261,17 +280,6 @@ function initCordifyApp() {
       document.getElementById("export-geojson")?.addEventListener("click", () => exportHistoryAsGeoJSON("cordify_history.geojson"));
       document.getElementById("export-kml")?.addEventListener("click", () => exportHistoryAsKml("cordify_history.kml"));
       document.getElementById("export-kmz")?.addEventListener("click", () => exportHistoryAsKmz("cordify_history.kmz"));
-      const dmsInputs = [ "dms_lat_string", "dms_lon_string", "dms_lat_deg", "dms_lat_min", "dms_lat_sec", "dms_lon_deg", "dms_lon_min", "dms_lon_sec", "dms_lat_dir", "dms_lon_dir" ];
-      dmsInputs.forEach(id => document.getElementById(id)?.addEventListener("keydown", e => {
-        if (e.key === "Enter") {
-          convertDmsToDd();
-        }
-      }));
-      [ "dd_lat", "dd_lon" ].forEach(id => document.getElementById(id)?.addEventListener("keydown", e => {
-        if (e.key === "Enter") {
-          convertDdToDms();
-        }
-      }));
       try {
         const pdd = localStorage.getItem("cordify_precision_dd");
         if (pdd) {
@@ -282,19 +290,31 @@ function initCordifyApp() {
           document.getElementById("precision-dms").value = pdms;
         }
       } catch {}
-      document.getElementById("precision-dd")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dd", e.target.value));
-      document.getElementById("precision-dms")?.addEventListener("change", e => localStorage.setItem("cordify_precision_dms", e.target.value));
+      document.getElementById("precision-dd")?.addEventListener("change", e => {
+        try {
+          localStorage.setItem("cordify_precision_dd", e.target.value);
+        } catch {}
+        updateDmsResult(false);
+      });
+      document.getElementById("precision-dms")?.addEventListener("change", e => {
+        try {
+          localStorage.setItem("cordify_precision_dms", e.target.value);
+        } catch {}
+        updateDdResult(false);
+      });
       try {
         const last = sessionStorage.getItem("cordify_last_inputs");
         if (last) {
           const v = JSON.parse(last);
-          [ "dms_lat_string", "dms_lon_string", "dms_lat_deg", "dms_lat_min", "dms_lat_sec", "dms_lon_deg", "dms_lon_min", "dms_lon_sec", "dd_lat", "dd_lon" ].forEach(k => {
+          [ "dms_pair", "dms_lat_string", "dms_lon_string", "dd_pair", "dd_lat", "dd_lon" ].forEach(k => {
             if (v[k] !== void 0 && document.getElementById(k)) {
               document.getElementById(k).value = v[k];
             }
           });
         }
       } catch {}
+      updateDmsResult(false);
+      updateDdResult(false);
       document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
       document.getElementById("batch-file")?.addEventListener("change", handleBatchFile);
       document.getElementById("batch-format")?.addEventListener("change", () => {
@@ -343,7 +363,7 @@ function initCordifyApp() {
         alert("Migration started (check console for errors).");
       });
       function persistInputs() {
-        const keys = [ "dms_lat_string", "dms_lon_string", "dms_lat_deg", "dms_lat_min", "dms_lat_sec", "dms_lon_deg", "dms_lon_min", "dms_lon_sec", "dd_lat", "dd_lon" ];
+        const keys = [ "dms_pair", "dms_lat_string", "dms_lon_string", "dd_pair", "dd_lat", "dd_lon" ];
         const obj = {};
         keys.forEach(k => {
           const el = document.getElementById(k);
@@ -557,19 +577,6 @@ function initCordifyApp() {
       }
       return dd;
     }
-    function dmsToDd(deg, min, sec, dir) {
-      if ([ deg, min, sec ].some(v => Number.isNaN(v))) {
-        return null;
-      }
-      if (min < 0 || min >= 60 || sec < 0 || sec >= 60) {
-        return null;
-      }
-      let dd = Math.abs(deg) + min / 60 + sec / 3600;
-      if (deg < 0 || Object.is(deg, -0) || dir === "S" || dir === "W") {
-        dd = -dd;
-      }
-      return dd;
-    }
     function ddToDms(dd, latlon, secDigits = 3) {
       if (!Number.isFinite(dd)) {
         return null;
@@ -595,129 +602,221 @@ function initCordifyApp() {
     function inLonRange(v) {
       return v >= -180 && v <= 180;
     }
-    function showErr(id, on) {
+    function showErr(id, msg) {
       const el = document.getElementById(id);
       if (el) {
-        el.style.display = on ? "block" : "none";
+        el.textContent = msg || "";
+        el.style.display = msg ? "block" : "none";
       }
     }
-    function convertDmsToDd() {
-      const latStr = (document.getElementById("dms_lat_string")?.value || "").trim();
-      const lonStr = (document.getElementById("dms_lon_string")?.value || "").trim();
-      const latDeg = parseFloat(document.getElementById("dms_lat_deg")?.value);
-      const latMin = parseFloat(document.getElementById("dms_lat_min")?.value);
-      const latSec = parseFloat(document.getElementById("dms_lat_sec")?.value);
-      const latDir = document.getElementById("dms_lat_dir")?.value;
-      const lonDeg = parseFloat(document.getElementById("dms_lon_deg")?.value);
-      const lonMin = parseFloat(document.getElementById("dms_lon_min")?.value);
-      const lonSec = parseFloat(document.getElementById("dms_lon_sec")?.value);
-      const lonDir = document.getElementById("dms_lon_dir")?.value;
-      [ "dms_lat_deg", "dms_lat_min", "dms_lat_sec", "dms_lon_deg", "dms_lon_min", "dms_lon_sec" ].forEach(id => {
-        document.getElementById(id)?.classList.remove("invalid");
-      });
-      showErr("err-dms", false);
-      const num = v => Number.isNaN(v) ? 0 : v;
-      const latEmpty = !latStr && [ latDeg, latMin, latSec ].every(Number.isNaN);
-      const lonEmpty = !lonStr && [ lonDeg, lonMin, lonSec ].every(Number.isNaN);
-      if (latEmpty || lonEmpty) {
-        if (latEmpty) {
-          [ "dms_lat_deg", "dms_lat_min", "dms_lat_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
-        }
-        if (lonEmpty) {
-          [ "dms_lon_deg", "dms_lon_min", "dms_lon_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
-        }
-        showErr("err-dms", true);
-        return;
+    function setInvalid(id, on) {
+      document.getElementById(id)?.classList.toggle("invalid", !!on);
+    }
+    function fieldValue(id) {
+      return (document.getElementById(id)?.value || "").trim();
+    }
+    // One coordinate in any accepted form; rejects E/W on a latitude and N/S on a longitude.
+    function parseCoord(str, kind) {
+      const v = parseDmsString(str);
+      if (v === null) {
+        return null;
       }
-      let dd_lat = latStr ? parseDmsString(latStr) : dmsToDd(num(latDeg), num(latMin), num(latSec), latDir || "N");
-      if (dd_lat === null || !inLatRange(dd_lat)) {
-        if (!latStr) {
-          [ "dms_lat_deg", "dms_lat_min", "dms_lat_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
-        }
-        showErr("err-dms", true);
-        return;
+      const letters = String(str).toUpperCase().match(/[NSEW]/g) || [];
+      if (kind === "lat" && letters.some(c => c === "E" || c === "W")) {
+        return null;
       }
-      let dd_lon = lonStr ? parseDmsString(lonStr) : dmsToDd(num(lonDeg), num(lonMin), num(lonSec), lonDir || "E");
-      if (dd_lon === null || !inLonRange(dd_lon)) {
-        if (!lonStr) {
-          [ "dms_lon_deg", "dms_lon_min", "dms_lon_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
+      if (kind === "lon" && letters.some(c => c === "N" || c === "S")) {
+        return null;
+      }
+      return (kind === "lat" ? inLatRange(v) : inLonRange(v)) ? v : null;
+    }
+    function parseDecimal(str) {
+      const t = String(str ?? "").trim().replace(",", ".");
+      return /^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t) ? parseFloat(t) : null;
+    }
+    // Split "lat, lon" text into its two parts. Accepts "12.58, 77.59",
+    // "12°34'56"N 77°35'12"E", "N 12 34 56 E 77 35 12", "12 34 56 77 35 12".
+    // With N/S/E/W letters the order can be either way round.
+    function splitPair(str) {
+      const s = String(str ?? "").trim().replace(/[′’‘`´]/g, "'").replace(/[″“”]/g, '"').replace(/\s+/g, " ");
+      if (!s) {
+        return null;
+      }
+      const up = s.toUpperCase();
+      const letters = [ ...up.matchAll(/[NSEW]/g) ];
+      const clean = t => t.replace(/^[,;\s]+|[,;\s]+$/g, "");
+      if (letters.length === 2) {
+        let i;
+        if (/[NSEW]$/.test(up)) {
+          i = letters[0].index + 1;
+        } else if (/^[NSEW]/.test(up)) {
+          i = letters[1].index;
+        } else {
+          return null;
         }
-        showErr("err-dms", true);
-        return;
+        const a = clean(s.slice(0, i)), b = clean(s.slice(i));
+        const isLat = t => /[NS]/i.test(t);
+        if (isLat(a) && !isLat(b)) {
+          return [ a, b ];
+        }
+        if (isLat(b) && !isLat(a)) {
+          return [ b, a ];
+        }
+        return null;
+      }
+      if (letters.length) {
+        return null;
+      }
+      let parts = s.split(/\s*;\s*/);
+      if (parts.length !== 2) {
+        parts = s.split(/\s*,\s+/);
+      }
+      if (parts.length !== 2 && (s.match(/,/g) || []).length === 1) {
+        parts = s.split(",");
+      }
+      if (parts.length !== 2) {
+        const tok = s.split(" ");
+        parts = tok.length % 2 === 0 && tok.length <= 6 ? [ tok.slice(0, tok.length / 2).join(" "), tok.slice(tok.length / 2).join(" ") ] : [];
+      }
+      parts = parts.map(clean);
+      return parts.length === 2 && parts[0] && parts[1] ? parts : null;
+    }
+    // Pair field -> fills the separate Latitude / Longitude fields, then converts.
+    function applyPair(card) {
+      const isDms = card === "dms";
+      const pairId = isDms ? "dms_pair" : "dd_pair";
+      const latId = isDms ? "dms_lat_string" : "dd_lat";
+      const lonId = isDms ? "dms_lon_string" : "dd_lon";
+      const update = isDms ? updateDmsResult : updateDdResult;
+      const raw = fieldValue(pairId);
+      setInvalid(pairId, false);
+      if (!raw) {
+        return update(false);
+      }
+      const parts = splitPair(raw);
+      const lat = parts ? parseCoord(parts[0], "lat") : null;
+      const lon = parts ? parseCoord(parts[1], "lon") : null;
+      if (lat === null || lon === null) {
+        setInvalid(pairId, true);
+        document.getElementById(isDms ? "dd_result" : "dms_result").value = "";
+        showErr(isDms ? "err-dms" : "err-dd", isDms ? `Couldn't read this pair. Example: 12°34'56" N, 77°35'12" E` : "Couldn't read this pair. Example: 12.582417, 77.586667");
+        return false;
+      }
+      let [ a, b ] = parts;
+      if (!isDms) {
+        // DD fields hold plain numbers; a DMS pair pasted here is converted.
+        a = parseDecimal(a) !== null ? a : String(+lat.toFixed(8));
+        b = parseDecimal(b) !== null ? b : String(+lon.toFixed(8));
+      }
+      document.getElementById(latId).value = a;
+      document.getElementById(lonId).value = b;
+      return update(false);
+    }
+    function saveResult(rec) {
+      window._cordify_addHistory && window._cordify_addHistory(rec);
+      if (document.getElementById("history-tab")?.style.display !== "none") {
+        window._cordify_renderHistory && window._cordify_renderHistory();
+      }
+      showFeedback("Saved to history", "success");
+    }
+    // DMS -> DD. save=false: live preview only; save=true: also add to history.
+    function updateDmsResult(save) {
+      const latStr = fieldValue("dms_lat_string");
+      const lonStr = fieldValue("dms_lon_string");
+      const lat = latStr ? parseCoord(latStr, "lat") : null;
+      const lon = lonStr ? parseCoord(lonStr, "lon") : null;
+      setInvalid("dms_lat_string", latStr && lat === null);
+      setInvalid("dms_lon_string", lonStr && lon === null);
+      let err = "";
+      if (latStr && lat === null) {
+        err = "Latitude not recognised. Use N or S, up to 90°, minutes and seconds under 60.";
+      } else if (lonStr && lon === null) {
+        err = "Longitude not recognised. Use E or W, up to 180°, minutes and seconds under 60.";
+      } else if (save && (lat === null || lon === null)) {
+        err = "Enter both a latitude and a longitude to save.";
       }
       const prec = parseInt(document.getElementById("precision-dd")?.value || "6", 10);
-      const inputSummary = (latStr ? `Lat: ${latStr}\n` : `Lat: ${latDeg || 0}° ${latMin || 0}' ${latSec || 0}" ${latDir || "N"}\n`) + (lonStr ? `Lon: ${lonStr}` : `Lon: ${lonDeg || 0}° ${lonMin || 0}' ${lonSec || 0}" ${lonDir || "E"}`);
-      const resultSummary = `Lat: ${dd_lat.toFixed(prec)}\nLon: ${dd_lon.toFixed(prec)}`;
-      const ddOut = document.getElementById("dd_result");
-      if (ddOut) {
-        ddOut.value = `Latitude (Y): ${dd_lat.toFixed(prec)}\nLongitude (X): ${dd_lon.toFixed(prec)}`;
+      const ok = lat !== null && lon !== null;
+      const out = document.getElementById("dd_result");
+      if (out) {
+        out.value = ok ? `Latitude (Y): ${lat.toFixed(prec)}\nLongitude (X): ${lon.toFixed(prec)}` : "";
       }
-      window._cordify_addHistory && window._cordify_addHistory({
+      if (!fieldValue("dms_pair") || err) {
+        setInvalid("dms_pair", false);
+      }
+      showErr("err-dms", err);
+      if (!save || !ok || err) {
+        return false;
+      }
+      saveResult({
         type: "DMS→DD",
-        input: inputSummary,
-        result: resultSummary,
+        input: `Lat: ${latStr}\nLon: ${lonStr}`,
+        result: `Lat: ${lat.toFixed(prec)}\nLon: ${lon.toFixed(prec)}`,
         date: Date.now()
       });
-      if (document.getElementById("history-tab")?.style.display !== "none") {
-        window._cordify_renderHistory && window._cordify_renderHistory();
-      }
+      return true;
     }
-    function convertDdToDms() {
-      const latEl = document.getElementById("dd_lat");
-      const lonEl = document.getElementById("dd_lon");
-      let dd_lat = parseFloat(latEl?.value);
-      let dd_lon = parseFloat(lonEl?.value);
-      showErr("err-dd", false);
-      if (Number.isNaN(dd_lat) || !inLatRange(dd_lat)) {
-        showErr("err-dd", true);
-        return;
-      }
-      if (Number.isNaN(dd_lon) || !inLonRange(dd_lon)) {
-        showErr("err-dd", true);
-        return;
+    // DD -> DMS. save=false: live preview only; save=true: also add to history.
+    function updateDdResult(save) {
+      const latStr = fieldValue("dd_lat");
+      const lonStr = fieldValue("dd_lon");
+      const latV = latStr ? parseDecimal(latStr) : null;
+      const lonV = lonStr ? parseDecimal(lonStr) : null;
+      const lat = latV !== null && inLatRange(latV) ? latV : null;
+      const lon = lonV !== null && inLonRange(lonV) ? lonV : null;
+      setInvalid("dd_lat", latStr && lat === null);
+      setInvalid("dd_lon", lonStr && lon === null);
+      let err = "";
+      if (latStr && lat === null) {
+        err = "Latitude must be a decimal number from −90 to 90.";
+      } else if (lonStr && lon === null) {
+        err = "Longitude must be a decimal number from −180 to 180.";
+      } else if (save && (lat === null || lon === null)) {
+        err = "Enter both a latitude and a longitude to save.";
       }
       const secDigits = parseInt(document.getElementById("precision-dms")?.value || "3", 10);
-      const dms_lat = ddToDms(dd_lat, "lat", secDigits);
-      const dms_lon = ddToDms(dd_lon, "lon", secDigits);
-      const inputSummary = `Lat: ${dd_lat}\nLon: ${dd_lon}`;
-      const resultSummary = `Lat: ${dms_lat}\nLon: ${dms_lon}`;
-      const dmsOut = document.getElementById("dms_result");
-      if (dmsOut) {
-        dmsOut.value = `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}`;
+      const ok = lat !== null && lon !== null;
+      const dms_lat = ok ? ddToDms(lat, "lat", secDigits) : "";
+      const dms_lon = ok ? ddToDms(lon, "lon", secDigits) : "";
+      const out = document.getElementById("dms_result");
+      if (out) {
+        out.value = ok ? `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}` : "";
       }
-      window._cordify_addHistory && window._cordify_addHistory({
+      if (!fieldValue("dd_pair") || err) {
+        setInvalid("dd_pair", false);
+      }
+      showErr("err-dd", err);
+      if (!save || !ok || err) {
+        return false;
+      }
+      saveResult({
         type: "DD→DMS",
-        input: inputSummary,
-        result: resultSummary,
+        input: `Lat: ${lat}\nLon: ${lon}`,
+        result: `Lat: ${dms_lat}\nLon: ${dms_lon}`,
         date: Date.now()
       });
-      if (document.getElementById("history-tab")?.style.display !== "none") {
-        window._cordify_renderHistory && window._cordify_renderHistory();
-      }
+      return true;
     }
     function clearDmsInputs() {
-      [ "dms_lat_string", "dms_lon_string", "dms_lat_deg", "dms_lat_min", "dms_lat_sec", "dms_lon_deg", "dms_lon_min", "dms_lon_sec" ].forEach(id => {
+      [ "dms_pair", "dms_lat_string", "dms_lon_string" ].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
           el.value = "";
+          el.classList.remove("invalid");
         }
       });
-      [ "dms_lat_deg", "dms_lat_min", "dms_lat_sec", "dms_lon_deg", "dms_lon_min", "dms_lon_sec" ].forEach(id => {
-        document.getElementById(id)?.classList.remove("invalid");
-      });
-      document.getElementById("dd_result") && (document.getElementById("dd_result").value = "");
-      showErr("err-dms", false);
+      updateDmsResult(false);
       window._cordify_persistInputs && window._cordify_persistInputs();
     }
     function clearDdInputs() {
-      [ "dd_lat", "dd_lon" ].forEach(id => {
+      [ "dd_pair", "dd_lat", "dd_lon" ].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
           el.value = "";
+          el.classList.remove("invalid");
         }
       });
-      document.getElementById("dms_result") && (document.getElementById("dms_result").value = "");
-      showErr("err-dd", false);
+      updateDdResult(false);
       window._cordify_persistInputs && window._cordify_persistInputs();
     }
     function swapDd() {
@@ -729,6 +828,8 @@ function initCordifyApp() {
       const tmp = latEl.value;
       latEl.value = lonEl.value;
       lonEl.value = tmp;
+      document.getElementById("dd_pair").value = "";
+      updateDdResult(false);
       window._cordify_persistInputs && window._cordify_persistInputs();
     }
     let _batch = {
@@ -979,11 +1080,6 @@ function initCordifyApp() {
       }
       if (mapTab.style.display === "none") {
         mapTab.style.display = "";
-      }
-      if (el.offsetWidth === 0 || el.offsetHeight === 0) {
-        el.style.width = "100%";
-        el.style.height = "400px";
-        el.style.minHeight = "400px";
       }
       try {
         _map = L.map(el, {
