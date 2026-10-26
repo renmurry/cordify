@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=2">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=3">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -49,7 +49,14 @@
             <span class="field-label">Paste a pair</span>
             <input id="dms_pair" type="text" autocomplete="off" spellcheck="false" placeholder='12°34&#39;56.7&quot; N, 77°35&#39;12&quot; E'>
           </label>
-          <div class="field-row">
+          <div class="mode-switch">
+            <span class="field-label" id="dms-mode-label">Enter as</span>
+            <div class="seg" role="radiogroup" aria-labelledby="dms-mode-label">
+              <label><input type="radio" name="dms-mode" value="text" checked>Text</label>
+              <label><input type="radio" name="dms-mode" value="boxes">Boxes</label>
+            </div>
+          </div>
+          <div class="field-row" id="dms-text-fields">
             <label class="field">
               <span class="field-label">Latitude</span>
               <input id="dms_lat_string" type="text" autocomplete="off" spellcheck="false" placeholder='12°34&#39;56.7&quot; N'>
@@ -58,6 +65,26 @@
               <span class="field-label">Longitude</span>
               <input id="dms_lon_string" type="text" autocomplete="off" spellcheck="false" placeholder='77°35&#39;12&quot; E'>
             </label>
+          </div>
+          <div id="dms-box-fields" hidden>
+            <div class="dms-boxes" id="dms_lat_boxes">
+              <span class="field-label">Latitude</span>
+              <div class="box-inputs">
+                <label><input id="dms_lat_deg" type="number" step="1" placeholder="deg" aria-label="Latitude degrees"><span aria-hidden="true">°</span></label>
+                <label><input id="dms_lat_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Latitude minutes"><span aria-hidden="true">'</span></label>
+                <label><input id="dms_lat_sec" type="number" step="any" min="0" placeholder="sec" aria-label="Latitude seconds"><span aria-hidden="true">"</span></label>
+                <select id="dms_lat_dir" aria-label="Latitude direction"><option value="N">N</option><option value="S">S</option></select>
+              </div>
+            </div>
+            <div class="dms-boxes" id="dms_lon_boxes">
+              <span class="field-label">Longitude</span>
+              <div class="box-inputs">
+                <label><input id="dms_lon_deg" type="number" step="1" placeholder="deg" aria-label="Longitude degrees"><span aria-hidden="true">°</span></label>
+                <label><input id="dms_lon_min" type="number" step="1" min="0" max="59" placeholder="min" aria-label="Longitude minutes"><span aria-hidden="true">'</span></label>
+                <label><input id="dms_lon_sec" type="number" step="any" min="0" placeholder="sec" aria-label="Longitude seconds"><span aria-hidden="true">"</span></label>
+                <select id="dms_lon_dir" aria-label="Longitude direction"><option value="E">E</option><option value="W">W</option></select>
+              </div>
+            </div>
           </div>
           <div class="error" id="err-dms" role="alert"></div>
 
@@ -221,7 +248,7 @@
   
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="./assets/js/historyStore.js"></script>
-  <script src="./assets/js/app.js?v=12"></script>
+  <script src="./assets/js/app.js?v=13"></script>
 
 <script>
   if ('serviceWorker' in navigator) {
