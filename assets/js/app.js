@@ -297,7 +297,17 @@ function initCordifyApp() {
       } catch {}
       document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
       document.getElementById("batch-file")?.addEventListener("change", handleBatchFile);
-      document.getElementById("batch-format")?.addEventListener("change", onBatchFormatChange);
+      document.getElementById("batch-format")?.addEventListener("change", () => {
+        // Input format and direction must agree (DD columns -> DMS, DMS strings -> DD).
+        const fmt = document.getElementById("batch-format").value;
+        document.getElementById("batch-direction").value = fmt === "dms-strings" ? "DMS2DD" : "DD2DMS";
+        onBatchFormatChange();
+      });
+      document.getElementById("batch-direction")?.addEventListener("change", () => {
+        const dir = document.getElementById("batch-direction").value;
+        document.getElementById("batch-format").value = dir === "DMS2DD" ? "dms-strings" : "dd-columns";
+        onBatchFormatChange();
+      });
       document.getElementById("batch-run")?.addEventListener("click", runBatch);
       document.getElementById("batch-download-xlsx")?.addEventListener("click", () => downloadBatch("xlsx"));
       document.getElementById("batch-download-csv")?.addEventListener("click", () => downloadBatch("csv"));
@@ -414,6 +424,7 @@ function initCordifyApp() {
         });
       }
       window._cordify_renderHistory = renderHistoryTable;
+      window._cordify_persistInputs = persistInputs;
       function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, c => ({
           "&": "&amp;",
@@ -524,11 +535,14 @@ function initCordifyApp() {
       if (tailDir) {
         dmsStr = dmsStr.slice(0, -1).trim();
       }
-      const m = dmsStr.match(/^([+-]?\d+(?:\.\d+)?)(?:[°\s]+(\d+(?:\.\d+)?))?(?:['\s]+(\d+(?:\.\d+)?))?(?:"?)$/);
+      // Accepts 12°34'56.7", 12 34 56.7, 12°34', 12° and 12.5. (?![\d.]) stops a
+      // number from being split into two (e.g. "1234" is never read as 12° 34').
+      const m = dmsStr.match(/^([+-]?\d+(?:\.\d+)?)(?![\d.])\s*°?(?:\s*(\d+(?:\.\d+)?)(?![\d.])\s*'?)?(?:\s*(\d+(?:\.\d+)?)(?![\d.])\s*"?)?$/);
       if (!m) {
         return null;
       }
-      let deg = parseFloat(m[1]);
+      const negative = m[1].startsWith("-");
+      let deg = Math.abs(parseFloat(m[1]));
       let min = m[2] !== void 0 ? parseFloat(m[2]) : 0;
       let sec = m[3] !== void 0 ? parseFloat(m[3]) : 0;
       if ([ deg, min, sec ].some(Number.isNaN)) {
@@ -537,12 +551,9 @@ function initCordifyApp() {
       if (min < 0 || min >= 60 || sec < 0 || sec >= 60) {
         return null;
       }
-      let dd = Math.abs(deg) + min / 60 + sec / 3600;
-      if (deg < 0) {
+      let dd = deg + min / 60 + sec / 3600;
+      if (negative || dir === "S" || dir === "W") {
         dd = -dd;
-      }
-      if (dir === "S" || dir === "W") {
-        dd = -Math.abs(dd);
       }
       return dd;
     }
@@ -554,25 +565,28 @@ function initCordifyApp() {
         return null;
       }
       let dd = Math.abs(deg) + min / 60 + sec / 3600;
-      if (dir === "S" || dir === "W") {
-        dd *= -1;
-      }
-      if (deg < 0) {
-        dd *= -1;
+      if (deg < 0 || Object.is(deg, -0) || dir === "S" || dir === "W") {
+        dd = -dd;
       }
       return dd;
     }
     function ddToDms(dd, latlon, secDigits = 3) {
-      if (Number.isNaN(dd)) {
+      if (!Number.isFinite(dd)) {
         return null;
       }
-      const dir = latlon === "lat" ? dd < 0 ? "S" : "N" : dd < 0 ? "W" : "E";
-      dd = Math.abs(dd);
-      const deg = Math.floor(dd);
-      const minFloat = (dd - deg) * 60;
-      const min = Math.floor(minFloat);
-      const sec = (minFloat - min) * 60;
-      const secStr = sec.toFixed(secDigits).replace(/\.?0+$/, "");
+      // Round once, in units of (1 / 10^secDigits) seconds, so 59.9996" can never
+      // show as 60" - it carries into the minutes (and degrees) instead.
+      const factor = Math.pow(10, secDigits);
+      const units = Math.round(Math.abs(dd) * 3600 * factor);
+      const negative = dd < 0 && units > 0;
+      const dir = latlon === "lat" ? negative ? "S" : "N" : negative ? "W" : "E";
+      const deg = Math.floor(units / (3600 * factor));
+      const min = Math.floor((units - deg * 3600 * factor) / (60 * factor));
+      const sec = (units - deg * 3600 * factor - min * 60 * factor) / factor;
+      let secStr = sec.toFixed(secDigits);
+      if (secStr.includes(".")) {
+        secStr = secStr.replace(/\.?0+$/, "");
+      }
       return `${deg}° ${min}' ${secStr}" ${dir}`;
     }
     function inLatRange(v) {
@@ -584,7 +598,7 @@ function initCordifyApp() {
     function showErr(id, on) {
       const el = document.getElementById(id);
       if (el) {
-        el.style.display = on ? "" : "none";
+        el.style.display = on ? "block" : "none";
       }
     }
     function convertDmsToDd() {
@@ -602,7 +616,20 @@ function initCordifyApp() {
         document.getElementById(id)?.classList.remove("invalid");
       });
       showErr("err-dms", false);
-      let dd_lat = latStr ? parseDmsString(latStr) : dmsToDd(latDeg || 0, latMin || 0, latSec || 0, latDir || "N");
+      const num = v => Number.isNaN(v) ? 0 : v;
+      const latEmpty = !latStr && [ latDeg, latMin, latSec ].every(Number.isNaN);
+      const lonEmpty = !lonStr && [ lonDeg, lonMin, lonSec ].every(Number.isNaN);
+      if (latEmpty || lonEmpty) {
+        if (latEmpty) {
+          [ "dms_lat_deg", "dms_lat_min", "dms_lat_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
+        }
+        if (lonEmpty) {
+          [ "dms_lon_deg", "dms_lon_min", "dms_lon_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
+        }
+        showErr("err-dms", true);
+        return;
+      }
+      let dd_lat = latStr ? parseDmsString(latStr) : dmsToDd(num(latDeg), num(latMin), num(latSec), latDir || "N");
       if (dd_lat === null || !inLatRange(dd_lat)) {
         if (!latStr) {
           [ "dms_lat_deg", "dms_lat_min", "dms_lat_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
@@ -610,7 +637,7 @@ function initCordifyApp() {
         showErr("err-dms", true);
         return;
       }
-      let dd_lon = lonStr ? parseDmsString(lonStr) : dmsToDd(lonDeg || 0, lonMin || 0, lonSec || 0, lonDir || "E");
+      let dd_lon = lonStr ? parseDmsString(lonStr) : dmsToDd(num(lonDeg), num(lonMin), num(lonSec), lonDir || "E");
       if (dd_lon === null || !inLonRange(dd_lon)) {
         if (!lonStr) {
           [ "dms_lon_deg", "dms_lon_min", "dms_lon_sec" ].forEach(id => document.getElementById(id)?.classList.add("invalid"));
@@ -680,7 +707,7 @@ function initCordifyApp() {
       });
       document.getElementById("dd_result") && (document.getElementById("dd_result").value = "");
       showErr("err-dms", false);
-      persistInputs();
+      window._cordify_persistInputs && window._cordify_persistInputs();
     }
     function clearDdInputs() {
       [ "dd_lat", "dd_lon" ].forEach(id => {
@@ -691,7 +718,7 @@ function initCordifyApp() {
       });
       document.getElementById("dms_result") && (document.getElementById("dms_result").value = "");
       showErr("err-dd", false);
-      persistInputs();
+      window._cordify_persistInputs && window._cordify_persistInputs();
     }
     function swapDd() {
       const latEl = document.getElementById("dd_lat");
@@ -702,7 +729,7 @@ function initCordifyApp() {
       const tmp = latEl.value;
       latEl.value = lonEl.value;
       lonEl.value = tmp;
-      persistInputs();
+      window._cordify_persistInputs && window._cordify_persistInputs();
     }
     let _batch = {
       rows: [],
@@ -727,13 +754,28 @@ function initCordifyApp() {
           return;
         }
         const data = await file.arrayBuffer();
-        const wb = XLSX.read(data, {
-          type: "array"
-        });
+        let wb;
+        if (/\.csv$/i.test(file.name)) {
+          // SheetJS reads BOM-less CSV bytes one by one, turning UTF-8 "°" into "Â°".
+          let text;
+          try {
+            text = new TextDecoder("utf-8", { fatal: true }).decode(data);
+          } catch {
+            text = new TextDecoder("windows-1252").decode(data);
+          }
+          wb = XLSX.read(text.replace(/^\uFEFF/, ""), {
+            type: "string"
+          });
+        } else {
+          wb = XLSX.read(data, {
+            type: "array"
+          });
+        }
         const sheetName = wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json(ws, {
-          raw: true
+          raw: true,
+          defval: ""
         });
         if (!Array.isArray(json) || !json.length) {
           throw new Error("Empty sheet");
@@ -768,7 +810,7 @@ function initCordifyApp() {
         return;
       }
       const dir = document.getElementById("batch-direction").value;
-      const fmt = document.getElementById("batch-format").value;
+      const fmt = dir === "DMS2DD" ? "dms-strings" : "dd-columns";
       let latCol, lonCol;
       if (fmt === "dd-columns") {
         latCol = document.getElementById("map-dd-lat").value;
@@ -1003,6 +1045,17 @@ function initCordifyApp() {
     function parseLatLngFromOutput(s) {
       if (!s || typeof s !== "string") {
         return null;
+      }
+      // Results look like "Lat: 12.5" or "Latitude (Y): 12° 34' 56.7\" S".
+      // Parse each labelled line as DMS/DD so seconds and N/S/E/W are kept.
+      const latLine = s.match(/Lat(?:itude)?(?:\s*\(Y\))?\s*[:=]\s*([^\n]+)/i);
+      const lonLine = s.match(/Lon(?:gitude)?(?:\s*\(X\))?\s*[:=]\s*([^\n]+)/i);
+      if (latLine && lonLine) {
+        const lat = parseDmsString(latLine[1]);
+        const lon = parseDmsString(lonLine[1]);
+        if (lat !== null && lon !== null && inLatRange(lat) && inLonRange(lon)) {
+          return [ lat, lon ];
+        }
       }
       const latMatch = s.match(/(?:Lat(?:itude)?(?:\s*\(Y\))?\s*[:=]?\s*)(-?\d+(?:\.\d+)?)/i);
       const lonMatch = s.match(/(?:Lon(?:gitude)?(?:\s*\(X\))?\s*[:=]?\s*)(-?\d+(?:\.\d+)?)/i);
