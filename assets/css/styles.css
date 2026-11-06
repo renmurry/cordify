@@ -12,6 +12,15 @@
   --accent-soft: #d8e8e5;
   --danger: #b3261e;
   --font: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Repair statuses: green unchanged, yellow corrected, orange check, red problem */
+  --st-ok: #2e7d32;
+  --st-fixed: #c99700;
+  --st-fixed-bg: #fff6cc;
+  --st-choose: #e07b00;
+  --st-choose-bg: #ffe8cc;
+  --st-bad: #c62828;
+  --st-bad-bg: #fbe1df;
+  --st-confirmed: #1565c0;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -24,6 +33,11 @@
     --accent-ink: #0f2220;
     --accent-soft: #1f3a37;
     --danger: #f2867d;
+    --st-ok: #7cc47f;
+    --st-fixed-bg: #3a3416;
+    --st-choose-bg: #3d2a12;
+    --st-bad-bg: #3a1c1b;
+    --st-confirmed: #8fb8ea;
   }
 }
 
@@ -224,4 +238,113 @@ button:hover { border-color: var(--muted); }
 }
 @media (prefers-reduced-motion: reduce) {
   .feedback { transition: none; }
+}
+
+/* ---------- Advanced mode switch ---------- */
+.adv-toggle {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: .8125rem; font-weight: 600; color: var(--muted);
+}
+.adv-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.adv-track {
+  position: relative; width: 32px; height: 18px; border-radius: 9px;
+  background: var(--line); transition: background .15s ease;
+}
+.adv-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--surface); transition: transform .15s ease;
+}
+.adv-toggle input:checked + .adv-track { background: var(--accent); }
+.adv-toggle input:checked + .adv-track::after { transform: translateX(14px); }
+.adv-toggle input:focus-visible + .adv-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.adv-toggle:has(input:checked) { color: var(--ink); }
+
+/* ---------- Repair tab ---------- */
+.repair-intro { margin: 4px 2px 16px; max-width: 72ch; }
+.repair-intro h2 { font-size: 1.35rem; margin-bottom: 4px; }
+.rp-step { margin-bottom: 16px; }
+.rp-step .hint.good { color: var(--st-ok); }
+.rp-step .hint.bad { color: var(--danger); }
+#rp-boundary-status:empty, #rp-data-status:empty { display: none; }
+#rp-sheets-wrap .table select { max-width: 220px; }
+.rp-groupby { margin-top: 12px; }
+#rp-paste {
+  width: 100%; font: inherit; font-variant-numeric: tabular-nums; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+}
+.rp-run-row { margin-top: 14px; }
+.rp-check { display: flex; align-items: flex-start; gap: 8px; font-size: .875rem; }
+.rp-check input { margin-top: 3px; flex: none; }
+button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filter: none; }
+#rp-map { height: 420px; border-radius: 10px; }
+#rp-map-wrap { padding: 6px; }
+.poly-label {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  font-size: .75rem; font-weight: 600; box-shadow: none; padding: 1px 6px;
+}
+.poly-label::before { display: none; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.chip { padding: 5px 11px; border-radius: 999px; font-size: .8125rem; }
+.chip b { font-variant-numeric: tabular-nums; margin-left: 4px; }
+.chip.is-active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.chip-fixed b { color: var(--st-fixed); }
+.chip-choose b { color: var(--st-choose); }
+.chip-problem b { color: var(--st-bad); }
+.chip-ok b { color: var(--st-ok); }
+.chip-confirmed b { color: var(--st-confirmed); }
+.chip.is-active b { color: inherit; }
+
+.rp-table td { font-size: .8125rem; }
+.rp-table pre.raw { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; max-width: 260px; }
+.rp-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rp-table td.note { max-width: 280px; color: var(--muted); }
+.rp-table select { max-width: 260px; font-size: .8125rem; padding: 5px 6px; }
+.rp-table .row-actions { white-space: nowrap; }
+.rp-table tr.st-fixed td { background: var(--st-fixed-bg); }
+.rp-table tr.st-choose td { background: var(--st-choose-bg); }
+.rp-table tr.st-bad td { background: var(--st-bad-bg); }
+.rp-table tr:hover td { filter: brightness(.98); }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: .75rem; font-weight: 700; color: #fff; background: var(--muted);
+}
+.badge.st-ok { background: var(--st-ok); }
+.badge.st-fixed { background: var(--st-fixed); color: #1c1a0a; }
+.badge.st-choose { background: var(--st-choose); }
+.badge.st-bad { background: var(--st-bad); }
+.badge.st-confirmed { background: var(--st-confirmed); }
+.rp-pager { margin-top: 12px; }
+.rp-formats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-bottom: 14px; }
+.rp-fmt { display: inline-flex; align-items: center; gap: 6px; font-size: .875rem; }
+.rp-fmt select { padding: 4px 6px; font-size: .8125rem; }
+.rp-addset { padding: 4px 8px; font-size: .8125rem; }
+.rp-resume-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.rp-filebtn {
+  position: relative; display: inline-block; cursor: pointer;
+  font-size: .875rem; font-weight: 600; color: var(--muted);
+  padding: 7px 12px; border: 1px dashed var(--line); border-radius: 8px;
+}
+.rp-filebtn:hover { color: var(--ink); border-color: var(--muted); }
+.rp-filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.rp-filebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rp-place-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 6px; padding: 8px 12px; border-radius: 8px;
+  background: var(--st-confirmed); color: #fff; font-size: .875rem; font-weight: 600;
+}
+.rp-place-banner[hidden] { display: none; }
+.rp-place-banner .btn-quiet { color: #fff; }
+#rp-map.is-placing, #rp-map.is-placing .leaflet-interactive { cursor: crosshair; }
+.flag {
+  display: inline-block; margin-bottom: 2px; padding: 1px 7px; border-radius: 999px;
+  font-size: .6875rem; font-weight: 700; color: var(--ink);
+  border: 1px solid var(--st-choose); background: var(--surface);
+}
+.flag-far { border-color: var(--st-bad); }
+.chip-flag b { color: var(--st-bad); }
+.chip-guess b { color: var(--st-choose); }
+@media (max-width: 640px) {
+  #rp-map { height: 320px; }
+  .rp-table pre.raw, .rp-table td.note { max-width: 180px; }
 }

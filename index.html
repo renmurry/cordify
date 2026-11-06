@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=3">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=6">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -24,7 +24,13 @@
       <button id="tab-convert" class="tab-btn is-active" type="button">Convert</button>
       <button id="tab-map" class="tab-btn" type="button">Map</button>
       <button id="tab-history" class="tab-btn" type="button">History</button>
+      <button id="tab-repair" class="tab-btn" type="button" hidden>Repair</button>
     </nav>
+    <label class="adv-toggle" title="Show advanced tools">
+      <input type="checkbox" id="advanced-mode">
+      <span class="adv-track" aria-hidden="true"></span>
+      Advanced
+    </label>
   </header>
 
   <main class="app-main">
@@ -222,6 +228,121 @@
       </section>
     </div>
 
+    <div id="repair-tab" class="page" style="display:none;">
+      <div class="repair-intro">
+        <h2>Repair coordinates</h2>
+        <p class="hint">Fix badly typed latitude/longitude using a boundary you trust. Nothing is changed silently: every correction is marked so you can check it before exporting.</p>
+      </div>
+
+      <section class="card rp-step" aria-labelledby="rp-s1">
+        <div class="card-head"><h2 id="rp-s1">1. Boundary</h2><span class="hint">KML, KMZ, zipped Shapefile (WGS84) or GeoJSON — optional, but much more reliable</span></div>
+        <input type="file" id="rp-boundary" accept=".kml,.kmz,.zip,.geojson,.json">
+        <p id="rp-boundary-status" class="hint"></p>
+        <label class="inline" id="rp-namefield-wrap" hidden>Name field
+          <select id="rp-namefield"></select>
+        </label>
+      </section>
+
+      <section class="card rp-step" aria-labelledby="rp-s2">
+        <div class="card-head">
+          <h2 id="rp-s2">2. Coordinates</h2>
+          <div class="seg" role="radiogroup" aria-label="Coordinate source">
+            <label><input type="radio" name="rp-source" value="file" checked>From a file</label>
+            <label><input type="radio" name="rp-source" value="paste">Paste text</label>
+          </div>
+        </div>
+        <div id="rp-src-file">
+          <input type="file" id="rp-data" accept=".xlsx,.xls,.csv">
+          <p id="rp-data-status" class="hint"></p>
+          <div id="rp-sheets-wrap" hidden>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Sheet</th><th>Rows</th><th>Coordinates in</th><th>Village / site column</th></tr></thead>
+                <tbody id="rp-sheets"></tbody>
+              </table>
+            </div>
+            <label class="inline rp-groupby">Group rows by
+              <select id="rp-groupby"></select>
+            </label>
+          </div>
+        </div>
+        <div id="rp-src-paste" hidden>
+          <textarea id="rp-paste" rows="6" spellcheck="false" placeholder="One coordinate pair per line, e.g.&#10;26°189922’.N 94°838020’.E&#10;N2665.997’ E09474.564’"></textarea>
+        </div>
+      </section>
+
+      <section class="card rp-step" aria-labelledby="rp-s3">
+        <div class="card-head"><h2 id="rp-s3">3. Check the area for each group</h2></div>
+        <div id="rp-links-wrap" hidden>
+          <p class="hint">Each group is checked against its own polygon. Polygons were matched by name, or learned from the rows that are already correct. Change any that look wrong.</p>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Group</th><th>Polygon</th><th>Why</th></tr></thead>
+              <tbody id="rp-links"></tbody>
+            </table>
+          </div>
+        </div>
+        <label class="rp-check"><input type="checkbox" id="rp-digitfix" checked> Also try a wrong degree digit (29.84 → 26.84) — always marked for checking</label>
+        <div class="actions rp-run-row">
+          <button type="button" class="btn-primary" id="rp-run" disabled>Repair coordinates</button>
+          <span id="rp-run-status" class="hint">Load coordinates first</span>
+        </div>
+        <div class="rp-resume-row">
+          <label class="rp-filebtn">Continue a saved review…
+            <input type="file" id="rp-resume" accept=".json,application/json">
+          </label>
+          <span id="rp-resume-status" class="hint"></span>
+        </div>
+      </section>
+
+      <div id="rp-map-wrap" class="card rp-step" hidden>
+        <div id="rp-place-banner" class="rp-place-banner" hidden>
+          <span id="rp-place-text"></span>
+          <button type="button" id="rp-place-cancel" class="btn-quiet">Cancel (Esc)</button>
+        </div>
+        <div id="rp-map"></div>
+      </div>
+
+      <section class="card rp-step" id="rp-review" aria-labelledby="rp-s4" hidden>
+        <div class="card-head">
+          <h2 id="rp-s4">4. Review</h2>
+          <div class="actions">
+            <button type="button" id="rp-confirm-all">Confirm all corrected</button>
+            <button type="button" id="rp-guess-all" title="Rows stay marked 'Best guess' until you confirm them">Use best guess for all to check</button>
+            <button type="button" id="rp-save" title="Download your choices so you can continue later">Save progress</button>
+            <span id="rp-review-status" class="hint"></span>
+          </div>
+        </div>
+        <div id="rp-summary" class="chips"></div>
+        <div class="table-wrap">
+          <table class="table rp-table">
+            <thead><tr><th>Where</th><th>Original</th><th>Lat / Lon</th><th>Status</th><th>What changed</th><th>Reading</th><th></th></tr></thead>
+            <tbody id="rp-table"></tbody>
+          </table>
+        </div>
+        <div id="rp-pager" class="actions rp-pager"></div>
+      </section>
+
+      <section class="card rp-step" id="rp-export" aria-labelledby="rp-s5" hidden>
+        <div class="card-head"><h2 id="rp-s5">5. Export</h2><span class="hint">Original values are kept; new columns are added.</span></div>
+        <div class="rp-formats" role="group" aria-label="Output formats">
+          <span class="field-label">Add columns as</span>
+          <label class="rp-fmt"><input type="checkbox" id="rp-fmt-dd" checked> Decimal degrees
+            <select id="rp-prec-dd" aria-label="Decimal places"><option value="6" selected>6 dp</option><option value="5">5 dp</option><option value="7">7 dp</option><option value="4">4 dp</option></select></label>
+          <label class="rp-fmt"><input type="checkbox" id="rp-fmt-dms"> DMS
+            <select id="rp-prec-dms" aria-label="Seconds decimal places"><option value="2" selected>0.01″</option><option value="1">0.1″</option><option value="3">0.001″</option><option value="0">1″</option></select></label>
+          <label class="rp-fmt"><input type="checkbox" id="rp-fmt-ddm"> Degrees + decimal minutes
+            <select id="rp-prec-ddm" aria-label="Minutes decimal places"><option value="4" selected>0.0001′</option><option value="3">0.001′</option><option value="5">0.00001′</option></select></label>
+          <span class="hint">e.g. 26.189922 · 26° 11' 23.72" N · 26° 11.3953' N</span>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn-primary" id="rp-export-xlsx">Download workbook (.xlsx)</button>
+          <button type="button" id="rp-export-geojson">GeoJSON</button>
+          <button type="button" id="rp-export-kml">KML</button>
+        </div>
+      </section>
+    </div>
+
     <div id="map-tab" style="display:none;">
       <div id="map"></div>
       <div class="map-fab" role="toolbar" aria-label="Map tools">
@@ -249,6 +370,8 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="./assets/js/historyStore.js"></script>
   <script src="./assets/js/app.js?v=13"></script>
+  <script src="./assets/js/repair-engine.js?v=2"></script>
+  <script src="./assets/js/repair-ui.js?v=3"></script>
 
 <script>
   if ('serviceWorker' in navigator) {
