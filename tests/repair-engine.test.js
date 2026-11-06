@@ -62,5 +62,22 @@ const donut = R.buildFeature({ rings: [ [ [ 0, 0 ], [ 10, 0 ], [ 10, 10 ], [ 0, 
 expect("point in ring is inside", R.contains(donut, 2, 2));
 expect("point in hole is outside", !R.contains(donut, 5, 5));
 
+// Output formats
+expect("DMS format", R.formatDMS(26.189922, "lat", 2) === `26° 11' 23.72" N`, R.formatDMS(26.189922, "lat", 2));
+expect("DMS rounding carries (no 60\")", R.formatDMS(12.9999999, "lat", 2) === `13° 0' 0.00" N`, R.formatDMS(12.9999999, "lat", 2));
+expect("DMS west", R.formatDMS(-46.6333, "lon", 1) === `46° 37' 59.9" W`, R.formatDMS(-46.6333, "lon", 1));
+expect("DDM format", R.formatDDM(26.189922, "lat", 4) === `26° 11.3953' N`, R.formatDDM(26.189922, "lat", 4));
+expect("DDM south", R.formatDDM(-23.5505, "lat", 3) === `23° 33.030' S`, R.formatDDM(-23.5505, "lat", 3));
+expect("DD rounding", R.formatDD(26.1899224, 6) === 26.189922);
+
+// No boundary: area estimated from correct rows
+const est = R.estimateAreas([
+  ...[ 0, 1, 2, 3, 4 ].map(i => ({ text: `-23.5${i}, -46.6${i}`, group: "A" })),
+  { text: "-23°55'05\" -46°63'33\"", group: "A" }
+]);
+expect("estimated area built from correct rows", est.features.length >= 1 && est.cleanPoints === 5, est.cleanPoints);
+const estRes = R.repairRows([ { id: 0, text: "-23°520000', -46°620000'", group: "A" } ], { features: est.features, groupFeatures: est.groupFeatures });
+expect("repair works with an estimated area", estRes[0].status !== "failed" && near(estRes[0].lat, -23.52), estRes[0]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

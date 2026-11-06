@@ -775,6 +775,81 @@
     return result;
   }
 
+  /* ---------- output formats ---------- */
+
+  const hemiFor = (v, role) => role === "lat" ? (v < 0 ? "S" : "N") : (v < 0 ? "W" : "E");
+
+  // 26.189922 -> 26° 11' 23.72" N  (rounded once, so 59.999" never shows as 60")
+  function formatDMS(v, role, secDigits = 2) {
+    if (v == null || !Number.isFinite(v)) return "";
+    const f = Math.pow(10, secDigits);
+    const units = Math.round(Math.abs(v) * 3600 * f);
+    const deg = Math.floor(units / (3600 * f));
+    const min = Math.floor((units - deg * 3600 * f) / (60 * f));
+    const sec = (units - deg * 3600 * f - min * 60 * f) / f;
+    return `${deg}° ${min}' ${sec.toFixed(secDigits)}" ${units ? hemiFor(v, role) : role === "lat" ? "N" : "E"}`;
+  }
+
+  // 26.189922 -> 26° 11.3953' N
+  function formatDDM(v, role, minDigits = 4) {
+    if (v == null || !Number.isFinite(v)) return "";
+    const f = Math.pow(10, minDigits);
+    const units = Math.round(Math.abs(v) * 60 * f);
+    const deg = Math.floor(units / (60 * f));
+    const min = (units - deg * 60 * f) / f;
+    return `${deg}° ${min.toFixed(minDigits)}' ${units ? hemiFor(v, role) : role === "lat" ? "N" : "E"}`;
+  }
+
+  function formatDD(v, digits = 6) {
+    return v == null || !Number.isFinite(v) ? "" : +v.toFixed(digits);
+  }
+
+  /*
+   * No boundary? Estimate an area per group from the rows that are already
+   * typed correctly (middle 90% of their points, padded). Less reliable than a
+   * real boundary, but enough to choose between readings that are far apart.
+   */
+  function estimateAreas(rows, opts = {}) {
+    const minPts = opts.minPoints || 3;
+    const byGroup = new Map(), all = [];
+    rows.forEach(r => {
+      const p = prepareRow(r);
+      const c = p.parts ? cleanPair(p) : null;
+      if (!c) return;
+      all.push(c);
+      const g = r.group ?? "";
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(c);
+    });
+    const pct = (a, q) => {
+      const s = a.slice().sort((x, y) => x - y);
+      return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))];
+    };
+    const box = pts => {
+      const la = pts.map(p => p.lat), lo = pts.map(p => p.lon);
+      let b = [ pct(lo, 0.05), pct(la, 0.05), pct(lo, 0.95), pct(la, 0.95) ];
+      const padX = Math.max(0.05, (b[2] - b[0]) * 0.2), padY = Math.max(0.05, (b[3] - b[1]) * 0.2);
+      b = [ b[0] - padX, b[1] - padY, b[2] + padX, b[3] + padY ];
+      return [ [ [ b[0], b[1] ], [ b[2], b[1] ], [ b[2], b[3] ], [ b[0], b[3] ], [ b[0], b[1] ] ] ];
+    };
+    const src = [], groupFeatures = {};
+    if (all.length < minPts) {
+      return { features: [], src: [], groupFeatures, cleanPoints: all.length };
+    }
+    src.push({ name: "Estimated area (all rows)", props: { name: "Estimated area (all rows)" }, rings: box(all) });
+    for (const [ g, pts ] of byGroup) {
+      if (pts.length >= minPts) {
+        groupFeatures[g] = [ src.length ];
+        src.push({ name: `Estimated area: ${g}`, props: { name: `Estimated area: ${g || "rows"}` }, rings: box(pts) });
+      }
+    }
+    for (const r of rows) {
+      const g = r.group ?? "";
+      if (!(g in groupFeatures)) groupFeatures[g] = [ 0 ];
+    }
+    return { features: src.map((f, i) => buildFeature(f, i)), src, groupFeatures, cleanPoints: all.length };
+  }
+
   // Rows typed the same way share a pattern, e.g. "9°9'9, 9°9'9, 9M".
   function patternOf(row) {
     const raw = row.text !== undefined ? row.text : `${row.latText ?? ""} | ${row.lonText ?? ""}`;
@@ -782,7 +857,7 @@
   }
 
   return {
-    patternOf, normalizeText, cleanText, splitCell, parsePart, readings, prepareRow, pairsFor,
+    patternOf, formatDMS, formatDDM, formatDD, estimateAreas, normalizeText, cleanText, splitCell, parsePart, readings, prepareRow, pairsFor,
     buildFeature, contains, featureAt, km, repairRows, learnGroupFeatures
   };
 });

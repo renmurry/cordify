@@ -27,8 +27,11 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   digit) and keeps only readings that fall inside the boundary. Each row is
   marked: unchanged, corrected (yellow), needs checking (orange) or not fixed
   (red). Values that were typed correctly are never changed without your
-  confirmation. Export the same workbook with new columns, or GeoJSON/KML.
-  Works for any area in the world.
+  confirmation. Every coordinate column in every sheet is found (one-column
+  pairs or Lat + Lon pairs, several per row). Export the same workbook with
+  new columns in decimal degrees, DMS and/or degrees + decimal minutes, or
+  GeoJSON/KML. Without a boundary file, the area is estimated from the rows
+  that are already correct (less reliable). Works for any area in the world.
 - **Installable (PWA)** — can be added to your home screen / desktop and works
   offline after the first visit (map tiles still need internet).
 

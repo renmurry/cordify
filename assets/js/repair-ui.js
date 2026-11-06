@@ -17,15 +17,17 @@
     failed: { label: "Not fixed", cls: "st-bad" },
     empty: { label: "Empty", cls: "st-empty" },
     confirmed: { label: "Checked", cls: "st-confirmed" },
+    guess: { label: "Best guess", cls: "st-choose" },
     rejected: { label: "Rejected", cls: "st-bad" }
   };
-  const COLORS = { ok: "#2e7d32", fixed: "#c99700", choose: "#e07b00", outside: "#c62828", failed: "#c62828", confirmed: "#1565c0", rejected: "#c62828" };
+  const COLORS = { guess: "#e07b00", ok: "#2e7d32", fixed: "#c99700", choose: "#e07b00", outside: "#c62828", failed: "#c62828", confirmed: "#1565c0", rejected: "#c62828" };
 
   const state = {
     src: [], features: [], fieldKeys: [], nameField: "",
     source: "file", workbook: null, fileName: "", sheets: {}, rows: [],
     links: {}, learned: {}, results: [], decisions: new Map(),
-    filter: "all", page: 0, map: null, boundaryLayer: null, pointLayer: null
+    filter: "all", page: 0, map: null, boundaryLayer: null, pointLayer: null,
+    estimated: false, userSrc: [], userFeatures: []
   };
 
   /* ---------------- Advanced mode + tab ---------------- */
@@ -281,8 +283,9 @@
       if (!src.length) {
         throw new Error("No polygons were found in this file.");
       }
-      state.src = src;
-      state.features = src.map((f, i) => R.buildFeature({ rings: f.rings, props: f.props }, i));
+      state.src = state.userSrc = src;
+      state.features = state.userFeatures = src.map((f, i) => R.buildFeature({ rings: f.rings, props: f.props }, i));
+      state.estimated = false;
       const keys = new Set();
       src.forEach(f => Object.keys(f.props || {}).forEach(k => keys.add(k)));
       state.fieldKeys = [ ...keys ];
@@ -296,8 +299,8 @@
       drawBoundary();
       refreshLinks();
     } catch (err) {
-      state.src = [];
-      state.features = [];
+      state.src = state.userSrc = [];
+      state.features = state.userFeatures = [];
       setStatus("rp-boundary-status", err.message || "Could not read this file.", "bad");
     }
   }
@@ -308,7 +311,44 @@
   const LAT = /^\s*lat(itude)?\b/i, LON = /^\s*(lon|lng|long)(gitude)?\b/i;
   const VILLAGE = /village|vill\b|site|place|locality/i;
   const GROUP = /district|\bdist\b|block|region|state|province|zone|county|division/i;
-  const looksCoord = v => /\d{1,3}\D+\d/.test(String(v ?? "")) && /\d{2}/.test(String(v ?? ""));
+  const LATW = /\b(lat|latitude)\b/i, LONW = /\b(lon|lng|long|longitude)\b/i;
+  // A cell holding a whole coordinate pair: two or more numbers plus a mark or letter.
+  const looksPair = v => {
+    const t = String(v ?? "");
+    const nums = (t.match(/\d+(?:\.\d+)?/g) || []).filter(n => n.replace(".", "").length >= 2);
+    return nums.length >= 2 && nums.length <= 10 && /[°ᵒº˚'’′"”″.,]|[NSEW]\b/i.test(t);
+  };
+
+  // Every coordinate column(s) in a sheet: one-column pairs and Lat + Lon pairs.
+  function detectSets(head, data) {
+    const sets = [], used = new Set();
+    const share = (j, test) => {
+      const vals = data.map(r => r[j]).filter(v => String(v ?? "").trim() !== "" && !/^[-–—\s.]*$/.test(String(v)));
+      return vals.length ? vals.filter(test).length / vals.length : 0;
+    };
+    // Lat + Lon pairs by header ("Latitude"/"Longitude", "Start Lat"/"Start Lon"...)
+    head.forEach((x, j) => {
+      if (!LATW.test(x) || LONW.test(x) || used.has(j)) return;
+      const key = x.replace(LATW, "").replace(/[\s_.()-]+/g, "").toLowerCase();
+      let k = head.findIndex((y, i) => !used.has(i) && i !== j && LONW.test(y) && !LATW.test(y) && y.replace(LONW, "").replace(/[\s_.()-]+/g, "").toLowerCase() === key);
+      if (k < 0) k = head.findIndex((y, i) => i > j && !used.has(i) && LONW.test(y) && !LATW.test(y));
+      if (k >= 0) {
+        used.add(j); used.add(k);
+        sets.push({ use: true, mode: "two", one: j, lat: j, lon: k, label: key ? x.replace(LATW, "").trim() || `${x} + ${head[k]}` : "Lat + Lon" });
+      }
+    });
+    // One-column pairs: by header name, or by content
+    head.forEach((x, j) => {
+      if (used.has(j)) return;
+      const byName = COORD_ONE.test(x) && !LATW.test(x) && !LONW.test(x);
+      const s = share(j, looksPair);
+      if ((byName && s > 0) || s >= 0.4) {
+        used.add(j);
+        sets.push({ use: true, mode: "one", one: j, lat: j, lon: j, label: x || `Column ${j + 1}` });
+      }
+    });
+    return sets;
+  }
 
   async function onDataFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -338,28 +378,14 @@
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true, blankrows: true });
         const h = aoa.findIndex(r => r.some(c => String(c).trim() !== ""));
         if (h < 0) {
-          state.sheets[name] = { aoa, head: [], h: -1, use: false };
+          state.sheets[name] = { aoa, head: [], h: -1, use: false, sets: [], village: -1, rows: 0 };
           continue;
         }
         const head = aoa[h].map(c => String(c).replace(/\s+/g, " ").trim());
-        const data = aoa.slice(h + 1, h + 40);
-        const score = j => data.filter(r => looksCoord(r[j])).length;
-        let one = head.findIndex(x => COORD_ONE.test(x) && !LAT.test(x) && !LON.test(x));
-        const lat = head.findIndex(x => LAT.test(x)), lon = head.findIndex(x => LON.test(x));
-        let mode = "one";
-        if (lat >= 0 && lon >= 0 && one < 0) mode = "two";
-        if (one < 0 && mode === "one") {
-          let best = -1, bestS = 0;
-          head.forEach((_, j) => {
-            const s = score(j);
-            if (s > bestS) { best = j; bestS = s; }
-          });
-          one = best;
-        }
-        const usable = mode === "two" || one >= 0;
+        const data = aoa.slice(h + 1, h + 60);
+        const sets = detectSets(head, data);
         state.sheets[name] = {
-          aoa, head, h, use: usable, mode,
-          one: one >= 0 ? one : 0, lat: lat >= 0 ? lat : 0, lon: lon >= 0 ? lon : Math.min(1, head.length - 1),
+          aoa, head, h, use: sets.length > 0, sets,
           village: head.findIndex(x => VILLAGE.test(x)),
           rows: aoa.length - h - 1
         };
@@ -380,17 +406,26 @@
   function renderSheets() {
     const tb = $("rp-sheets");
     const opts = (head, sel, none) => (none ? `<option value="-1"${sel < 0 ? " selected" : ""}>— none —</option>` : "") + head.map((x, j) => `<option value="${j}"${j === sel ? " selected" : ""}>${esc(x || "Column " + (j + 1))}</option>`).join("");
-    tb.innerHTML = Object.entries(state.sheets).filter(([ , s ]) => s.h >= 0).map(([ name, s ]) => `
-      <tr data-sheet="${esc(name)}">
-        <td><label class="inline"><input type="checkbox" data-k="use"${s.use ? " checked" : ""}> ${esc(name)}</label></td>
-        <td>${s.rows}</td>
-        <td>
-          <select data-k="mode"><option value="one"${s.mode === "one" ? " selected" : ""}>One column</option><option value="two"${s.mode === "two" ? " selected" : ""}>Lat + Lon columns</option></select>
-          <span class="col-one"${s.mode === "two" ? " hidden" : ""}><select data-k="one">${opts(s.head, s.one)}</select></span>
-          <span class="col-two"${s.mode === "one" ? " hidden" : ""}><select data-k="lat" aria-label="Latitude column">${opts(s.head, s.lat)}</select> <select data-k="lon" aria-label="Longitude column">${opts(s.head, s.lon)}</select></span>
-        </td>
-        <td><select data-k="village">${opts(s.head, s.village, true)}</select></td>
-      </tr>`).join("");
+    const html = [];
+    for (const [ name, s ] of Object.entries(state.sheets)) {
+      if (s.h < 0) continue;
+      const sets = s.sets.length ? s.sets : [ null ];
+      sets.forEach((set, k) => {
+        const first = k === 0;
+        html.push(`<tr data-sheet="${esc(name)}" data-set="${set ? k : -1}">
+          <td>${first ? esc(name) : ""}</td>
+          <td>${first ? s.rows : ""}</td>
+          <td>${set ? `<label class="inline"><input type="checkbox" data-k="use"${set.use ? " checked" : ""} aria-label="Use this coordinate column">
+            <select data-k="mode"><option value="one"${set.mode === "one" ? " selected" : ""}>One column</option><option value="two"${set.mode === "two" ? " selected" : ""}>Lat + Lon columns</option></select></label>
+            <span class="col-one"${set.mode === "two" ? " hidden" : ""}><select data-k="one">${opts(s.head, set.one)}</select></span>
+            <span class="col-two"${set.mode === "one" ? " hidden" : ""}><select data-k="lat" aria-label="Latitude column">${opts(s.head, set.lat)}</select> <select data-k="lon" aria-label="Longitude column">${opts(s.head, set.lon)}</select></span>`
+            : `<span class="hint">No coordinates found</span>`}
+            ${k === sets.length - 1 ? ` <button type="button" class="btn-quiet rp-addset" data-sheet="${esc(name)}">+ Add column</button>` : ""}</td>
+          <td>${first ? `<select data-k="village">${opts(s.head, s.village, true)}</select>` : ""}</td>
+        </tr>`);
+      });
+    }
+    tb.innerHTML = html.join("");
     $("rp-sheets-wrap").hidden = false;
   }
 
@@ -399,12 +434,29 @@
     if (!tr) return;
     const s = state.sheets[tr.dataset.sheet];
     const k = e.target.dataset.k;
-    if (k === "use") s.use = e.target.checked;
+    if (k === "village") {
+      s.village = +e.target.value;
+      refreshLinks();
+      return;
+    }
+    const set = s.sets[+tr.dataset.set];
+    if (!set) return;
+    if (k === "use") set.use = e.target.checked;
     else if (k === "mode") {
-      s.mode = e.target.value;
-      tr.querySelector(".col-one").hidden = s.mode === "two";
-      tr.querySelector(".col-two").hidden = s.mode === "one";
-    } else if (k) s[k] = +e.target.value;
+      set.mode = e.target.value;
+      tr.querySelector(".col-one").hidden = set.mode === "two";
+      tr.querySelector(".col-two").hidden = set.mode === "one";
+    } else if (k) set[k] = +e.target.value;
+    set.label = set.mode === "two" ? `${s.head[set.lat]} + ${s.head[set.lon]}` : s.head[set.one];
+    refreshLinks();
+  }
+
+  function addSet(sheet) {
+    const s = state.sheets[sheet];
+    const taken = new Set(s.sets.flatMap(x => x.mode === "two" ? [ x.lat, x.lon ] : [ x.one ]));
+    const j = Math.max(0, s.head.findIndex((_, i) => !taken.has(i)));
+    s.sets.push({ use: true, mode: "one", one: j, lat: j, lon: Math.min(j + 1, s.head.length - 1), label: s.head[j] });
+    renderSheets();
     refreshLinks();
   }
 
@@ -418,7 +470,8 @@
     }
     const gb = $("rp-groupby").value;
     for (const [ name, s ] of Object.entries(state.sheets)) {
-      if (!s.use || s.h < 0) continue;
+      const sets = s.sets.filter(x => x.use);
+      if (s.h < 0 || !sets.length) continue;
       const gcol = gb.startsWith("col:") ? s.head.indexOf(gb.slice(4)) : -1;
       let lastGroup = null;
       for (let i = s.h + 1; i < s.aoa.length; i++) {
@@ -430,16 +483,20 @@
           if (!group) group = lastGroup || "(blank)";
           lastGroup = group;
         }
-        const row = { id: rows.length, sheet: name, rowIndex: i, group, village: s.village >= 0 ? String(r[s.village] ?? "").trim() || null : null };
-        if (s.mode === "two") {
-          row.latText = r[s.lat] === "" ? null : String(r[s.lat]);
-          row.lonText = r[s.lon] === "" ? null : String(r[s.lon]);
-          row.raw = `${row.latText ?? ""}  |  ${row.lonText ?? ""}`;
-        } else {
-          row.text = r[s.one] === "" ? null : String(r[s.one]);
-          row.raw = row.text ?? "";
-        }
-        rows.push(row);
+        const village = s.village >= 0 ? String(r[s.village] ?? "").trim() || null : null;
+        s.sets.forEach((set, k) => {
+          if (!set.use) return;
+          const row = { id: rows.length, sheet: name, rowIndex: i, set: k, setLabel: set.label, multi: sets.length > 1, group, village };
+          if (set.mode === "two") {
+            row.latText = r[set.lat] === "" ? null : String(r[set.lat]);
+            row.lonText = r[set.lon] === "" ? null : String(r[set.lon]);
+            row.raw = `${row.latText ?? ""}  |  ${row.lonText ?? ""}`;
+          } else {
+            row.text = r[set.one] === "" ? null : String(r[set.one]);
+            row.raw = row.text ?? "";
+          }
+          rows.push(row);
+        });
       }
     }
     return rows;
@@ -452,10 +509,13 @@
   function refreshLinks() {
     const wrap = $("rp-links-wrap");
     state.rows = buildRows();
-    const ready = state.features.length && state.rows.length;
+    const ready = state.rows.length > 0;
     $("rp-run").disabled = !ready;
-    setStatus("rp-run-status", ready ? `${state.rows.length} rows ready` : !state.features.length ? "Load a boundary first" : "Load coordinates first");
-    if (!ready || state.features.length === 1) {
+    const noBoundary = !state.userFeatures.length;
+    setStatus("rp-run-status", !ready ? "Load coordinates first" :
+      noBoundary ? `${state.rows.length} coordinates ready — no boundary loaded, so the area will be estimated from the correct rows (less reliable)` :
+      `${state.rows.length} coordinates ready`);
+    if (!ready || noBoundary || state.features.length === 1) {
       wrap.hidden = true;
       state.links = {};
       return;
@@ -496,10 +556,26 @@
 
   function run() {
     state.rows = buildRows();
-    if (!state.rows.length || !state.features.length) return;
-    const groupFeatures = {};
-    for (const [ g, v ] of Object.entries(state.links)) {
-      if (v !== "all" && v !== "" && v != null) groupFeatures[g] = [ +v ];
+    if (!state.rows.length) return;
+    let groupFeatures = {};
+    if (!state.userFeatures.length) {
+      const est = R.estimateAreas(state.rows);
+      if (!est.features.length) {
+        setStatus("rp-run-status", "Not enough correctly typed rows to estimate the area. Load a boundary file.", "bad");
+        return;
+      }
+      state.src = est.src;
+      state.features = est.features;
+      state.estimated = true;
+      groupFeatures = est.groupFeatures;
+      drawBoundary();
+    } else {
+      state.src = state.userSrc;
+      state.features = state.userFeatures;
+      state.estimated = false;
+      for (const [ g, v ] of Object.entries(state.links)) {
+        if (v !== "all" && v !== "" && v != null) groupFeatures[g] = [ +v ];
+      }
     }
     setStatus("rp-run-status", "Repairing…");
     setTimeout(() => {
@@ -508,7 +584,7 @@
       state.decisions = new Map();
       state.page = 0;
       state.filter = "all";
-      setStatus("rp-run-status", `Done in ${((performance.now() - t) / 1000).toFixed(1)} s`, "good");
+      setStatus("rp-run-status", `Done in ${((performance.now() - t) / 1000).toFixed(1)} s` + (state.estimated ? " — area estimated from correct rows, check results carefully" : ""), "good");
       $("rp-review").hidden = false;
       $("rp-export").hidden = false;
       renderReview();
@@ -526,13 +602,14 @@
     const cand = k >= 0 ? res.candidates[k] : null;
     const lat = cand ? cand.lat : res.lat, lon = cand ? cand.lon : res.lon;
     const usable = res.status === "ok" || res.status === "fixed" || res.status === "choose" || (d && d.confirmed);
-    return { status: d && d.confirmed ? "confirmed" : res.status, lat: usable ? lat : (res.status === "outside" ? lat : null), lon: usable ? lon : (res.status === "outside" ? lon : null), cand, res };
+    return { status: d && d.confirmed ? "confirmed" : d && d.guess ? "guess" : res.status, lat: usable ? lat : (res.status === "outside" ? lat : null), lon: usable ? lon : (res.status === "outside" ? lon : null), cand, res };
   }
 
   function noteFor(i) {
     const e = effective(i);
     if (e.status === "confirmed") return "checked by you" + (e.cand && e.cand.notes.length ? " — " + e.cand.notes.filter(n => !/^read as/.test(n)).join("; ") : "");
     if (e.status === "rejected") return "rejected by you";
+    if (e.status === "guess") return "best guess, not checked — " + e.res.notes.join("; ");
     const d = state.decisions.get(i);
     if (d && d.chosen != null && e.cand) return e.cand.notes.join("; ");
     return e.res.notes.join("; ");
@@ -564,7 +641,7 @@
     const chips = [
       [ "all", "All", state.results.length - (c.empty || 0) ],
       [ "ok", "Unchanged", c.ok || 0 ], [ "fixed", "Corrected", c.fixed || 0 ], [ "choose", "Check", c.choose || 0 ],
-      [ "confirmed", "Checked by you", c.confirmed || 0 ], [ "problem", "Outside / not fixed", (c.outside || 0) + (c.failed || 0) + (c.rejected || 0) ],
+      [ "guess", "Best guess", c.guess || 0 ], [ "confirmed", "Checked by you", c.confirmed || 0 ], [ "problem", "Outside / not fixed", (c.outside || 0) + (c.failed || 0) + (c.rejected || 0) ],
       [ "empty", "Empty", c.empty || 0 ]
     ];
     $("rp-summary").innerHTML = chips.map(([ k, label, n ]) => `<button type="button" class="chip chip-${k}${state.filter === k ? " is-active" : ""}" data-filter="${k}">${label} <b>${n}</b></button>`).join("");
@@ -576,6 +653,8 @@
     $("rp-pager").innerHTML = pages > 1 ? `<button type="button" data-page="${state.page - 1}"${state.page === 0 ? " disabled" : ""}>Previous</button> <span class="hint">Page ${state.page + 1} of ${pages} · ${list.length} rows</span> <button type="button" data-page="${state.page + 1}"${state.page >= pages - 1 ? " disabled" : ""}>Next</button>` : `<span class="hint">${list.length} rows</span>`;
     $("rp-confirm-all").textContent = `Confirm all corrected (${c.fixed || 0})`;
     $("rp-confirm-all").disabled = !c.fixed;
+    $("rp-guess-all").textContent = `Use best guess for all to check (${c.choose || 0})`;
+    $("rp-guess-all").disabled = !c.choose;
   }
 
   function rowHtml(i) {
@@ -595,7 +674,7 @@
       similar ? `<button type="button" class="btn-quiet rp-similar" data-i="${i}" title="Use the same kind of correction on rows typed the same way">Same for ${similar} similar</button>` : "",
       e.lat != null ? `<button type="button" class="btn-quiet rp-zoom" data-i="${i}">Map</button>` : ""
     ].join("");
-    const where = row.sheet === row.group ? esc(row.sheet) : `${esc(row.sheet)} · ${esc(row.group)}`;
+    const where = (row.sheet === row.group ? esc(row.sheet) : `${esc(row.sheet)} · ${esc(row.group)}`) + (row.multi ? ` · ${esc(row.setLabel)}` : "");
     return `<tr class="${st.cls}" data-i="${i}">
       <td><span class="hint">${where} · row ${row.rowIndex + 1}</span><br>${esc(row.village || "")}</td>
       <td><pre class="raw">${esc(row.raw)}</pre></td>
@@ -616,6 +695,7 @@
       if (j === i || (r.status !== "choose" && r.status !== "fixed")) return;
       const d = state.decisions.get(j);
       if (d && (d.confirmed || d.rejected)) return;
+      if (state.rows[j].set !== row.set) return;
       if (state.rows[j].group === row.group && R.patternOf(state.rows[j]) === pat) out.push(j);
     });
     return out;
@@ -726,17 +806,30 @@
 
   /* ---------------- export ---------------- */
 
-  const STATUS_TEXT = { ok: "Unchanged", fixed: "Corrected - check", choose: "Needs check", confirmed: "Checked by user", outside: "Outside boundary", failed: "Not fixed", rejected: "Rejected by user", empty: "Empty" };
+  const STATUS_TEXT = { ok: "Unchanged", fixed: "Corrected - check", choose: "Needs check", guess: "Best guess - check", confirmed: "Checked by user", outside: "Outside boundary", failed: "Not fixed", rejected: "Rejected by user", empty: "Empty" };
 
-  function exportValues(i) {
-    const e = effective(i);
-    const keep = e.status === "ok" || e.status === "fixed" || e.status === "choose" || e.status === "confirmed";
-    return {
-      lat: keep ? +e.lat.toFixed(7) : "", lon: keep ? +e.lon.toFixed(7) : "",
-      status: STATUS_TEXT[e.status] || e.status,
-      confidence: e.status === "empty" ? "" : e.status === "confirmed" ? 100 : e.res.confidence,
-      note: noteFor(i)
+  function formats() {
+    const f = {
+      dd: $("rp-fmt-dd").checked, dms: $("rp-fmt-dms").checked, ddm: $("rp-fmt-ddm").checked,
+      ddDigits: +$("rp-prec-dd").value, secDigits: +$("rp-prec-dms").value, minDigits: +$("rp-prec-ddm").value
     };
+    if (!f.dd && !f.dms && !f.ddm) f.dd = true;
+    return f;
+  }
+
+  // Values for one result in the chosen formats, plus status columns.
+  function exportValues(i, f = formats()) {
+    const e = effective(i);
+    const keep = [ "ok", "fixed", "choose", "guess", "confirmed" ].includes(e.status) && e.lat != null;
+    const lat = keep ? e.lat : null, lon = keep ? e.lon : null;
+    const cols = [];
+    if (f.dd) cols.push([ "Lat_DD", lat == null ? "" : R.formatDD(lat, f.ddDigits) ], [ "Lon_DD", lon == null ? "" : R.formatDD(lon, f.ddDigits) ]);
+    if (f.dms) cols.push([ "Lat_DMS", R.formatDMS(lat, "lat", f.secDigits) ], [ "Lon_DMS", R.formatDMS(lon, "lon", f.secDigits) ]);
+    if (f.ddm) cols.push([ "Lat_DDM", R.formatDDM(lat, "lat", f.minDigits) ], [ "Lon_DDM", R.formatDDM(lon, "lon", f.minDigits) ]);
+    cols.push([ "Repair_Status", STATUS_TEXT[e.status] || e.status ],
+      [ "Confidence", e.status === "empty" ? "" : e.status === "confirmed" ? 100 : e.res.confidence ],
+      [ "Repair_Note", noteFor(i) ]);
+    return { lat, lon, cols };
   }
 
   // Line breaks inside cells: write plain "\n" (what Excel, QGIS and pandas read from the original),
@@ -753,13 +846,11 @@
 
   function exportWorkbook() {
     const out = XLSX.utils.book_new();
-    const add = [ "Lat_DD", "Lon_DD", "Repair_Status", "Confidence", "Repair_Note" ];
+    const f = formats();
     if (state.source === "paste") {
-      const aoa = [ [ "Original" ].concat(add) ];
-      state.rows.forEach((r, i) => {
-        const v = exportValues(i);
-        aoa.push([ noCR(r.raw), v.lat, v.lon, v.status, v.confidence, v.note ]);
-      });
+      const names = exportValues(0, f).cols.map(c => c[0]);
+      const aoa = [ [ "Original" ].concat(names) ];
+      state.rows.forEach((r, i) => aoa.push([ noCR(r.raw) ].concat(exportValues(i, f).cols.map(c => c[1]))));
       XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(aoa), "Repaired");
       XLSX.writeFile(out, "cordify_repaired.xlsx");
       return;
@@ -776,11 +867,19 @@
         continue;
       }
       const aoa = s.aoa.map(r => r.map(noCR));
-      const base = Math.max(...aoa.map(r => r.length));
-      add.forEach((h, j) => { aoa[s.h][base + j] = h; });
-      for (const i of bySheet.get(name)) {
-        const v = exportValues(i), r = aoa[state.rows[i].rowIndex];
-        [ v.lat, v.lon, v.status, v.confidence, v.note ].forEach((x, j) => { r[base + j] = x; });
+      let col = Math.max(...aoa.map(r => r.length));
+      const idx = bySheet.get(name);
+      // One block of new columns per coordinate column used; prefixed when there are several.
+      const setsUsed = [ ...new Set(idx.map(i => state.rows[i].set)) ];
+      for (const k of setsUsed) {
+        const rowsK = idx.filter(i => state.rows[i].set === k);
+        const prefix = setsUsed.length > 1 ? `${state.rows[rowsK[0]].setLabel} ` : "";
+        const names = exportValues(rowsK[0], f).cols.map(c => prefix + c[0]);
+        names.forEach((h, j) => { aoa[s.h][col + j] = h; });
+        for (const i of rowsK) {
+          exportValues(i, f).cols.forEach((c, j) => { aoa[state.rows[i].rowIndex][col + j] = c[1]; });
+        }
+        col += names.length;
       }
       XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(aoa), name);
     }
@@ -788,20 +887,22 @@
   }
 
   function pointFeatures() {
+    const f = formats();
     const feats = [];
     state.rows.forEach((r, i) => {
-      const v = exportValues(i);
-      if (v.lat === "") return;
+      const v = exportValues(i, f);
+      if (v.lat == null) return;
       const props = {};
       if (state.source !== "paste") {
         const s = state.sheets[r.sheet];
         s.head.forEach((h, j) => {
           const val = s.aoa[r.rowIndex][j];
-          if (h && val !== "" && val != null) props[h] = val;
+          if (h && val !== "" && val != null) props[h] = noCR(val);
         });
       }
-      Object.assign(props, { sheet: r.sheet, row: r.rowIndex + 1, original: r.raw, repair_status: v.status, confidence: v.confidence, repair_note: v.note });
-      feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [ v.lon, v.lat ] }, properties: props });
+      Object.assign(props, { sheet: r.sheet, row: r.rowIndex + 1 }, r.multi ? { coordinate_column: r.setLabel } : {}, { original: noCR(r.raw) });
+      v.cols.forEach(([ k, val ]) => { props[k] = val; });
+      feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [ +v.lon.toFixed(8), +v.lat.toFixed(8) ] }, properties: props });
     });
     return feats;
   }
@@ -812,14 +913,14 @@
 
   function exportKml() {
     const x = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const style = { "Unchanged": "ok", "Checked by user": "checked", "Corrected - check": "fixed", "Needs check": "check" };
+    const style = { "Unchanged": "ok", "Checked by user": "checked", "Corrected - check": "fixed", "Needs check": "check", "Best guess - check": "check" };
     const color = { ok: "ff327d2e", checked: "ffc06515", fixed: "ff0097c9", check: "ff007be0" };
     const styles = Object.entries(color).map(([ id, c ]) => `<Style id="${id}"><IconStyle><color>${c}</color><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>`).join("");
     const pms = pointFeatures().map(f => {
       const p = f.properties;
       const data = Object.entries(p).map(([ k, v ]) => `<Data name="${x(k)}"><value>${x(v)}</value></Data>`).join("");
       const nm = p[Object.keys(p).find(k => VILLAGE.test(k))] || `${p.sheet} row ${p.row}`;
-      return `<Placemark><name>${x(nm)}</name><styleUrl>#${style[p.repair_status] || "check"}</styleUrl><ExtendedData>${data}</ExtendedData><Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point></Placemark>`;
+      return `<Placemark><name>${x(nm)}</name><styleUrl>#${style[p.Repair_Status] || "check"}</styleUrl><ExtendedData>${data}</ExtendedData><Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point></Placemark>`;
     }).join("\n");
     const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Cordify repaired points</name>${styles}\n${pms}\n</Document></kml>`;
     download(`${state.fileName || "cordify"}_repaired.kml`, new Blob([ kml ], { type: "application/vnd.google-earth.kml+xml" }));
@@ -837,6 +938,10 @@
     });
     $("rp-data").addEventListener("change", onDataFile);
     $("rp-sheets").addEventListener("change", onSheetEdit);
+    $("rp-sheets").addEventListener("click", e => {
+      const b = e.target.closest(".rp-addset");
+      if (b) addSet(b.dataset.sheet);
+    });
     $("rp-groupby").addEventListener("change", refreshLinks);
     document.querySelectorAll('input[name="rp-source"]').forEach(r => r.addEventListener("change", e => {
       state.source = e.target.value;
@@ -883,6 +988,36 @@
       renderReview();
       drawPoints();
     });
+    $("rp-guess-all").addEventListener("click", () => {
+      let n = 0;
+      state.results.forEach((r, i) => {
+        const d = state.decisions.get(i);
+        if (r.status === "choose" && !d) {
+          state.decisions.set(i, { chosen: r.chosen, guess: true });
+          n++;
+        }
+      });
+      renderReview();
+      drawPoints();
+      flash(`${n} rows set to their best guess — they stay marked "Best guess" until you confirm them`);
+    });
+    // Export formats: remembered per browser
+    const FMT_KEYS = [ "rp-fmt-dd", "rp-fmt-dms", "rp-fmt-ddm", "rp-prec-dd", "rp-prec-dms", "rp-prec-ddm" ];
+    try {
+      const saved = JSON.parse(localStorage.getItem("cordify_repair_formats") || "{}");
+      FMT_KEYS.forEach(k => {
+        if (saved[k] === undefined || !$(k)) return;
+        if ($(k).type === "checkbox") $(k).checked = saved[k];
+        else $(k).value = saved[k];
+      });
+    } catch (e) {}
+    FMT_KEYS.forEach(k => $(k)?.addEventListener("change", () => {
+      const o = {};
+      FMT_KEYS.forEach(x => { o[x] = $(x).type === "checkbox" ? $(x).checked : $(x).value; });
+      try {
+        localStorage.setItem("cordify_repair_formats", JSON.stringify(o));
+      } catch (e) {}
+    }));
     $("rp-export-xlsx").addEventListener("click", exportWorkbook);
     $("rp-export-geojson").addEventListener("click", exportGeoJson);
     $("rp-export-kml").addEventListener("click", exportKml);
