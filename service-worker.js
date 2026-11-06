@@ -4,7 +4,7 @@
 //     updates immediately), falling back to cache when offline.
 //   - Everything else: cache-first.
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
-const CACHE_NAME = 'cordify-cache-v11';
+const CACHE_NAME = 'cordify-cache-v12';
 const PRECACHE = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const PRECACHE = [
   './assets/js/brand-swap.js',
   './assets/js/batch.js',
   './assets/js/tips.js',
+  './assets/js/sheet.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png'
 ];

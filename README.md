@@ -10,6 +10,13 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
 - **DMS ⇄ DD** — convert coordinates between Degrees/Minutes/Seconds
   (e.g. `12° 34' 56.7" N`) and Decimal Degrees (e.g. `12.582417`), in both
   directions, with adjustable precision.
+- **Keep an Excel sheet** — switch it on in the Convert tab and every conversion
+  you save (Enter or "Save to history") is also added as a row: Name/ID (counts
+  up automatically, e.g. GCP-01 → GCP-02), decimal degrees, DMS, degrees +
+  decimal minutes, source, input, date/time and remarks. The sheet is previewed
+  live, kept on this device until you clear it, and downloads as Excel. You can
+  also load an Excel file you already have and keep adding to it; its other
+  columns are kept.
 - **Batch convert** — upload an Excel (`.xlsx`/`.xls`) or `.csv` file. Every
   sheet (or one) is read, and the coordinate column(s) are found for you: both
   values in one column (`26.92, 95.03`) or separate Lat and Lon columns. Values
@@ -70,6 +77,7 @@ manifest.json            PWA configuration
 assets/js/repair-engine.js  Coordinate repair logic (no UI; also runs in Node)
 assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
 assets/js/batch.js       Batch convert (Convert tab)
+assets/js/sheet.js       "Keep an Excel sheet" (Convert tab)
 assets/js/tips.js        Tooltips and the one-time Repair hint
 assets/js/brand-swap.js  The swapping "DMS ⇄ decimal degrees" header text
 tests/history.test.html  Browser test page for the history store
