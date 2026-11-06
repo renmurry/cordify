@@ -335,21 +335,6 @@ function initCordifyApp() {
         setDmsMode("text", false);
       }
       document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
-      document.getElementById("batch-file")?.addEventListener("change", handleBatchFile);
-      document.getElementById("batch-format")?.addEventListener("change", () => {
-        // Input format and direction must agree (DD columns -> DMS, DMS strings -> DD).
-        const fmt = document.getElementById("batch-format").value;
-        document.getElementById("batch-direction").value = fmt === "dms-strings" ? "DMS2DD" : "DD2DMS";
-        onBatchFormatChange();
-      });
-      document.getElementById("batch-direction")?.addEventListener("change", () => {
-        const dir = document.getElementById("batch-direction").value;
-        document.getElementById("batch-format").value = dir === "DMS2DD" ? "dms-strings" : "dd-columns";
-        onBatchFormatChange();
-      });
-      document.getElementById("batch-run")?.addEventListener("click", runBatch);
-      document.getElementById("batch-download-xlsx")?.addEventListener("click", () => downloadBatch("xlsx"));
-      document.getElementById("batch-download-csv")?.addEventListener("click", () => downloadBatch("csv"));
       document.getElementById("history-export-json")?.addEventListener("click", () => {
         try {
           const json = window.historyStore && typeof window.historyStore.exportAll === "function" ? window.historyStore.exportAll() : JSON.stringify(getHistory());
@@ -578,6 +563,12 @@ function initCordifyApp() {
       // number from being split into two (e.g. "1234" is never read as 12° 34').
       const m = dmsStr.match(/^([+-]?\d+(?:\.\d+)?)(?![\d.])\s*°?(?:\s*(\d+(?:\.\d+)?)(?![\d.])\s*'?)?(?:\s*(\d+(?:\.\d+)?)(?![\d.])\s*"?)?$/);
       if (!m) {
+        return null;
+      }
+      // Whole minutes/seconds have at most two digits, degrees at most three:
+      // "26°43'034" is not 34 seconds, so it is rejected rather than misread.
+      const whole = t => t ? t.replace(/^[+-]/, "").split(".")[0].length : 0;
+      if (whole(m[1]) > 3 || whole(m[2]) > 2 || whole(m[3]) > 2) {
         return null;
       }
       const negative = m[1].startsWith("-");
@@ -925,216 +916,8 @@ function initCordifyApp() {
       updateDdResult(false);
       window._cordify_persistInputs && window._cordify_persistInputs();
     }
-    let _batch = {
-      rows: [],
-      headers: [],
-      outRows: [],
-      outHeaders: []
-    };
-    function onBatchFormatChange() {
-      const fmt = document.getElementById("batch-format")?.value || "dd-columns";
-      document.getElementById("map-dd").style.display = fmt === "dd-columns" ? "" : "none";
-      document.getElementById("map-dms").style.display = fmt === "dms-strings" ? "" : "none";
-    }
-    async function handleBatchFile(e) {
-      const file = e.target.files?.[0];
-      resetBatchUI();
-      if (!file) {
-        return;
-      }
-      try {
-        if (typeof XLSX === "undefined") {
-          showFeedback("Batch import requires the XLSX library (sheetjs). Batch features are disabled.", "error");
-          return;
-        }
-        const data = await file.arrayBuffer();
-        let wb;
-        if (/\.csv$/i.test(file.name)) {
-          // SheetJS reads BOM-less CSV bytes one by one, turning UTF-8 "°" into "Â°".
-          let text;
-          try {
-            text = new TextDecoder("utf-8", { fatal: true }).decode(data);
-          } catch {
-            text = new TextDecoder("windows-1252").decode(data);
-          }
-          wb = XLSX.read(text.replace(/^\uFEFF/, ""), {
-            type: "string"
-          });
-        } else {
-          wb = XLSX.read(data, {
-            type: "array"
-          });
-        }
-        const sheetName = wb.SheetNames[0];
-        const ws = wb.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(ws, {
-          raw: true,
-          defval: ""
-        });
-        if (!Array.isArray(json) || !json.length) {
-          throw new Error("Empty sheet");
-        }
-        _batch.rows = json;
-        _batch.headers = Object.keys(json[0]);
-        populateMapping(_batch.headers);
-        document.getElementById("batch-mapping").style.display = "";
-        document.getElementById("batch-actions").style.display = "";
-        document.getElementById("batch-status").textContent = `Loaded ${json.length} rows from "${sheetName}"`;
-      } catch (err) {
-        document.getElementById("batch-status").textContent = "Failed to read file.";
-      }
-    }
-    function populateMapping(headers) {
-      const ddLat = document.getElementById("map-dd-lat");
-      const ddLon = document.getElementById("map-dd-lon");
-      const dmsLat = document.getElementById("map-dms-lat");
-      const dmsLon = document.getElementById("map-dms-lon");
-      [ ddLat, ddLon, dmsLat, dmsLon ].forEach(sel => {
-        sel.innerHTML = "";
-        headers.forEach(h => {
-          const o = document.createElement("option");
-          o.value = o.textContent = h;
-          sel.appendChild(o);
-        });
-      });
-      onBatchFormatChange();
-    }
-    function runBatch() {
-      if (!_batch.rows.length) {
-        return;
-      }
-      const dir = document.getElementById("batch-direction").value;
-      const fmt = dir === "DMS2DD" ? "dms-strings" : "dd-columns";
-      let latCol, lonCol;
-      if (fmt === "dd-columns") {
-        latCol = document.getElementById("map-dd-lat").value;
-        lonCol = document.getElementById("map-dd-lon").value;
-      } else {
-        latCol = document.getElementById("map-dms-lat").value;
-        lonCol = document.getElementById("map-dms-lon").value;
-      }
-      const outRows = [];
-      const outHeaders = new Set([ ..._batch.headers ]);
-      if (dir === "DD2DMS") {
-        outHeaders.add("lat_dms");
-        outHeaders.add("lon_dms");
-        const secDigits = parseInt(document.getElementById("precision-dms")?.value || "3", 10);
-        for (const row of _batch.rows) {
-          const lat = parseFloat(row[latCol]);
-          const lon = parseFloat(row[lonCol]);
-          const latOk = !Number.isNaN(lat) && inLatRange(lat);
-          const lonOk = !Number.isNaN(lon) && inLonRange(lon);
-          const copy = {
-            ...row
-          };
-          if (latOk && lonOk) {
-            copy.lat_dms = ddToDms(lat, "lat", secDigits);
-            copy.lon_dms = ddToDms(lon, "lon", secDigits);
-          } else {
-            copy.lat_dms = "";
-            copy.lon_dms = "";
-          }
-          outRows.push(copy);
-        }
-      } else {
-        outHeaders.add("lat_dd");
-        outHeaders.add("lon_dd");
-        const prec = parseInt(document.getElementById("precision-dd")?.value || "6", 10);
-        for (const row of _batch.rows) {
-          const copy = {
-            ...row
-          };
-          const latStr = String(row[latCol] ?? "").trim();
-          const lonStr = String(row[lonCol] ?? "").trim();
-          const lat = parseDmsString(latStr);
-          const lon = parseDmsString(lonStr);
-          if (lat !== null && lon !== null && inLatRange(lat) && inLonRange(lon)) {
-            copy.lat_dd = lat.toFixed(prec);
-            copy.lon_dd = lon.toFixed(prec);
-          } else {
-            copy.lat_dd = "";
-            copy.lon_dd = "";
-          }
-          outRows.push(copy);
-        }
-      }
-      _batch.outRows = outRows;
-      _batch.outHeaders = Array.from(outHeaders);
-      renderBatchPreview(outRows, _batch.outHeaders);
-      document.getElementById("batch-preview-wrap").style.display = "";
-      document.getElementById("batch-status").textContent = `Converted ${outRows.length} rows.`;
-    }
-    function renderBatchPreview(rows, headers) {
-      const head = document.getElementById("batch-head");
-      const body = document.getElementById("batch-body");
-      head.innerHTML = "";
-      body.innerHTML = "";
-      headers.forEach(h => {
-        const th = document.createElement("th");
-        th.textContent = h;
-        head.appendChild(th);
-      });
-      rows.slice(0, 20).forEach(r => {
-        const tr = document.createElement("tr");
-        headers.forEach(h => {
-          const td = document.createElement("td");
-          td.textContent = r[h] !== void 0 ? r[h] : "";
-          tr.appendChild(td);
-        });
-        body.appendChild(tr);
-      });
-    }
-    function downloadBatch(type) {
-      if (!_batch.outRows.length) {
-        return;
-      }
-      if (type === "xlsx") {
-        if (typeof XLSX === "undefined") {
-          alert("Excel export requires the XLSX library (sheetjs).");
-          return;
-        }
-        const ws = XLSX.utils.json_to_sheet(_batch.outRows, {
-          header: _batch.outHeaders
-        });
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Converted");
-        XLSX.writeFile(wb, "cordify_converted.xlsx");
-      } else {
-        if (typeof XLSX === "undefined") {
-          alert("CSV export requires the XLSX utils (sheetjs).");
-          return;
-        }
-        const ws = XLSX.utils.json_to_sheet(_batch.outRows, {
-          header: _batch.outHeaders
-        });
-        const csv = XLSX.utils.sheet_to_csv(ws);
-        const blob = new Blob([ csv ], {
-          type: "text/csv"
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "cordify_converted.csv";
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-      }
-    }
-    function resetBatchUI() {
-      _batch = {
-        rows: [],
-        headers: [],
-        outRows: [],
-        outHeaders: []
-      };
-      document.getElementById("batch-mapping").style.display = "none";
-      document.getElementById("batch-actions").style.display = "none";
-      document.getElementById("batch-preview-wrap").style.display = "none";
-      document.getElementById("batch-status").textContent = "";
-    }
+    // Shared with batch.js (Batch convert), which reads values the same way as the converter.
+    window.CordifyConvert = { parseCoord, parseDmsString };
     function showFeedback(message, type = "info") {
       const existing = document.querySelector(".feedback");
       if (existing) {

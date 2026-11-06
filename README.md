@@ -10,9 +10,14 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
 - **DMS ⇄ DD** — convert coordinates between Degrees/Minutes/Seconds
   (e.g. `12° 34' 56.7" N`) and Decimal Degrees (e.g. `12.582417`), in both
   directions, with adjustable precision.
-- **Batch convert** — upload an Excel (`.xlsx`/`.xls`) or `.csv` file, pick the
-  latitude/longitude columns, convert every row at once, then download the
-  result as XLSX or CSV.
+- **Batch convert** — upload an Excel (`.xlsx`/`.xls`) or `.csv` file. Every
+  sheet (or one) is read, and the coordinate column(s) are found for you: both
+  values in one column (`26.92, 95.03`) or separate Lat and Lon columns. Values
+  in decimal degrees, DMS or degrees + decimal minutes are read; pick which of
+  those formats to add as new columns. You get an exact count of rows converted,
+  and the rows that couldn't be read are listed with the reason (badly typed
+  values can be fixed in Repair). Download the same workbook with the new
+  columns, or CSV (one per sheet, zipped, opens correctly in Excel).
 - **History** — every conversion is saved locally in your browser. You can
   review, export (JSON/CSV), or clear it.
 - **Map** — plot any result, or all of your history, on an interactive
@@ -64,6 +69,9 @@ service-worker.js        Offline caching (PWA)
 manifest.json            PWA configuration
 assets/js/repair-engine.js  Coordinate repair logic (no UI; also runs in Node)
 assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
+assets/js/batch.js       Batch convert (Convert tab)
+assets/js/tips.js        Tooltips and the one-time Repair hint
+assets/js/brand-swap.js  The swapping "DMS ⇄ decimal degrees" header text
 tests/history.test.html  Browser test page for the history store
 tests/repair-engine.test.js  Repair tests: run `node tests/repair-engine.test.js`
 ```

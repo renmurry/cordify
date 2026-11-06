@@ -703,7 +703,18 @@
       [ "guess", "Best guess", c.guess || 0 ], [ "confirmed", "Checked by you", (c.confirmed || 0) + (c.placed || 0) ], [ "flag", "Flags", state.flags.size ], [ "problem", "Outside / not fixed", (c.outside || 0) + (c.failed || 0) + (c.rejected || 0) ],
       [ "empty", "Empty", c.empty || 0 ]
     ];
-    $("rp-summary").innerHTML = chips.map(([ k, label, n ]) => `<button type="button" class="chip chip-${k}${state.filter === k ? " is-active" : ""}" data-filter="${k}">${label} <b>${n}</b></button>`).join("");
+    const CHIP_TIPS = {
+      all: "Every row that has a coordinate.",
+      ok: "Typed correctly and inside the area — nothing changed.",
+      fixed: "Yellow: one clear correction. Check and confirm.",
+      choose: "Orange: several readings fit — choose one in the Reading column.",
+      guess: "Set to their most likely reading by 'Use best guess'. Not checked yet.",
+      confirmed: "Rows you confirmed, chose or placed on the map.",
+      flag: "Duplicate points, or points more than 5 km from the rest of their village.",
+      problem: "Red: outside the area, or no reading fits. Use 'Place on map' to set them by hand.",
+      empty: "No coordinate in the cell."
+    };
+    $("rp-summary").innerHTML = chips.map(([ k, label, n ]) => `<button type="button" class="chip chip-${k}${state.filter === k ? " is-active" : ""}" data-filter="${k}" data-tip="${esc(CHIP_TIPS[k] || "")}">${label} <b>${n}</b></button>`).join("");
     const list = filtered();
     const pages = Math.max(1, Math.ceil(list.length / PAGE));
     state.page = Math.min(state.page, pages - 1);
@@ -729,13 +740,13 @@
     }
     const similar = res.status === "choose" || res.status === "fixed" ? similarRows(i).length : 0;
     const actions = [
-      (res.status === "fixed" || res.status === "choose") && !(d && (d.confirmed || d.rejected)) ? `<button type="button" class="rp-confirm" data-i="${i}">Confirm</button>` : "",
-      similar ? `<button type="button" class="btn-quiet rp-similar" data-i="${i}" title="Use the same kind of correction on rows typed the same way">Same for ${similar} similar</button>` : "",
-      e.status !== "empty" ? `<button type="button" class="btn-quiet rp-place" data-i="${i}" title="Click the map to set this point by hand">${e.status === "failed" || e.status === "outside" || e.status === "rejected" ? "Place on map" : "Move"}</button>` : "",
-      e.lat != null ? `<button type="button" class="btn-quiet rp-zoom" data-i="${i}">Map</button>` : ""
+      (res.status === "fixed" || res.status === "choose") && !(d && (d.confirmed || d.rejected)) ? `<button type="button" class="rp-confirm" data-i="${i}" data-tip="Mark this reading as checked by you.">Confirm</button>` : "",
+      similar ? `<button type="button" class="btn-quiet rp-similar" data-i="${i}" data-tip="Use the same kind of correction on the other rows typed the same way, and mark them all as checked.">Same for ${similar} similar</button>` : "",
+      e.status !== "empty" ? `<button type="button" class="btn-quiet rp-place" data-i="${i}" data-tip="Click on the map to set this point by hand. The map zooms to this village's other points.">${e.status === "failed" || e.status === "outside" || e.status === "rejected" ? "Place on map" : "Move"}</button>` : "",
+      e.lat != null ? `<button type="button" class="btn-quiet rp-zoom" data-i="${i}" data-tip="Show this point on the map below.">Map</button>` : ""
     ].join("");
     const fl = state.flags.get(i) || [];
-    const tags = fl.map(f => `<span class="flag flag-${f.kind}" title="${esc(f.text)}">${f.kind === "dup" ? "Duplicate" : "Far from village"}</span>`).join(" ");
+    const tags = fl.map(f => `<span class="flag flag-${f.kind}" data-tip="${esc(f.text)}">${f.kind === "dup" ? "Duplicate" : "Far from village"}</span>`).join(" ");
     const where = (row.sheet === row.group ? esc(row.sheet) : `${esc(row.sheet)} · ${esc(row.group)}`) + (row.multi ? ` · ${esc(row.setLabel)}` : "");
     return `<tr class="${st.cls}" data-i="${i}">
       <td><span class="hint">${where} · row ${row.rowIndex + 1}</span><br>${esc(row.village || "")}</td>

@@ -53,8 +53,12 @@
     }
     // "N." / ".N" around hemisphere letters
     s = s.replace(/([NSEW])\./g, "$1 ").replace(/\.([NSEW])\b/g, " $1");
-    // 26°26'.257 -> 26°26.257  (mark typed before the decimal point)
-    s = s.replace(/(\d)\s*['"]\s*\.(?=\d)/g, "$1.");
+    // 26°26'.257 -> 26°26.257  (mark typed before the decimal point). This changes how the
+    // value reads, so it is recorded: the converter reports it, Repair marks it for checking.
+    if (/(\d)\s*['"]\s*\.(?=\d)/.test(s)) {
+      s = s.replace(/(\d)\s*['"]\s*\.(?=\d)/g, "$1.");
+      notes.push({ text: "mark before a decimal point ignored", cost: 0.5 });
+    }
     // 95. 165864 -> 95.165864
     if (/(\d)\.\s+(?=\d)/.test(s)) {
       s = s.replace(/(\d)\.\s+(?=\d)/g, "$1.");
