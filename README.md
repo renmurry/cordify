@@ -19,6 +19,16 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   OpenStreetMap (via Leaflet).
 - **Export** — save your points as GeoJSON, KML, or KMZ for use in Google Earth
   and GIS tools.
+- **Repair (Advanced mode)** — turn on **Advanced** in the header to get the
+  Repair tab. Upload a boundary (KML, KMZ, zipped Shapefile in WGS84, or
+  GeoJSON) and a spreadsheet of badly typed coordinates. Cordify tries every
+  sensible reading of each value (misplaced decimal points, missing °/′/″,
+  `°` typed for `0`, swapped lat/lon, letters typed for digits, a wrong degree
+  digit) and keeps only readings that fall inside the boundary. Each row is
+  marked: unchanged, corrected (yellow), needs checking (orange) or not fixed
+  (red). Values that were typed correctly are never changed without your
+  confirmation. Export the same workbook with new columns, or GeoJSON/KML.
+  Works for any area in the world.
 - **Installable (PWA)** — can be added to your home screen / desktop and works
   offline after the first visit (map tiles still need internet).
 
@@ -46,7 +56,10 @@ assets/js/historyStore.js Local storage of conversion history
 assets/icons/            App icons (192px, 512px)
 service-worker.js        Offline caching (PWA)
 manifest.json            PWA configuration
+assets/js/repair-engine.js  Coordinate repair logic (no UI; also runs in Node)
+assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
 tests/history.test.html  Browser test page for the history store
+tests/repair-engine.test.js  Repair tests: run `node tests/repair-engine.test.js`
 ```
 
 ## Running locally
