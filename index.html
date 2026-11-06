@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=8">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=9">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -36,6 +36,23 @@
   <main class="app-main">
 
     <div id="convert-tab" class="page">
+      <section class="card sheet-bar" aria-label="Excel sheet">
+        <label class="adv-toggle sheet-switch" data-tip="When on, every conversion you save (Enter or 'Save to history') is also added to a sheet below, with a name, all formats and the time. Download it as Excel at any time. It is kept on this device until you clear it.">
+          <input type="checkbox" id="sheet-toggle">
+          <span class="adv-track" aria-hidden="true"></span>
+          Keep an Excel sheet
+        </label>
+        <div id="sheet-fields" class="sheet-fields" hidden>
+          <label class="field">
+            <span class="field-label">Name / ID</span>
+            <input id="sheet-name" type="text" autocomplete="off" placeholder="e.g. GCP-01" data-tip="Optional. If it ends in a number, it counts up after each save (GCP-01 → GCP-02).">
+          </label>
+          <label class="field sheet-remarks-field">
+            <span class="field-label">Remarks</span>
+            <input id="sheet-remarks" type="text" autocomplete="off" placeholder="Optional note for this point">
+          </label>
+        </div>
+      </section>
       <div class="tools">
 
         <section class="card tool" aria-labelledby="dms-title">
@@ -145,6 +162,35 @@
         </section>
 
       </div>
+
+      <section class="card sheet-card" id="sheet-card" aria-labelledby="sheet-title" hidden>
+        <div class="card-head">
+          <h2 id="sheet-title">Sheet <span class="hint" id="sheet-count"></span> <button type="button" class="help" aria-label="About the sheet" data-tip="Each saved conversion becomes a row: Name, decimal degrees, DMS, degrees + decimal minutes, source, input, time and remarks. Newest rows are shown first; the download keeps the order you added them.">?</button></h2>
+          <div class="actions">
+            <label class="rp-filebtn" data-tip="Continue a sheet you have: Cordify reads its coordinates (DD, DMS or DDM, one or two columns), fills in the other formats, and keeps all your other columns.">Load Excel…
+              <input type="file" id="sheet-load" accept=".xlsx,.xls,.csv">
+            </label>
+            <button type="button" class="btn-primary" id="sheet-download" disabled>Download Excel</button>
+            <button type="button" class="btn-quiet" id="sheet-clear" disabled>Clear sheet</button>
+          </div>
+        </div>
+        <div id="sheet-choice" class="sheet-choice" hidden>
+          <span id="sheet-choice-text"></span>
+          <span class="actions">
+            <button type="button" class="btn-primary" data-how="append">Add after them</button>
+            <button type="button" data-how="replace">Replace them</button>
+            <button type="button" class="btn-quiet" data-how="cancel">Cancel</button>
+          </span>
+        </div>
+        <p class="hint sheet-status" id="sheet-status"></p>
+        <div class="table-wrap">
+          <table class="table sheet-table">
+            <thead><tr><th>#</th><th>Name</th><th>Decimal degrees</th><th>DMS</th><th>DDM</th><th>Added</th><th>Remarks</th><th></th></tr></thead>
+            <tbody id="sheet-body"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="sheet-more"></p>
+      </section>
 
       <section class="card batch" aria-labelledby="batch-title">
         <div class="card-head">
@@ -369,11 +415,12 @@
   
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="./assets/js/historyStore.js"></script>
-  <script src="./assets/js/app.js?v=14"></script>
+  <script src="./assets/js/app.js?v=15"></script>
   <script src="./assets/js/repair-engine.js?v=2"></script>
   <script src="./assets/js/repair-ui.js?v=4"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
-  <script src="./assets/js/batch.js?v=1"></script>
+  <script src="./assets/js/batch.js?v=2"></script>
+  <script src="./assets/js/sheet.js?v=1"></script>
   <script src="./assets/js/tips.js?v=1"></script>
 
 <script>

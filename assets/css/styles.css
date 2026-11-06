@@ -403,3 +403,27 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
 .batch-table tr.batch-fail td { background: var(--st-bad-bg); }
 tr.batch-nocols td { background: var(--st-choose-bg); }
 #batch-mapping .table select { max-width: 220px; }
+
+/* ---------- Keep an Excel sheet ---------- */
+.sheet-bar { margin-bottom: 16px; padding: 12px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
+.sheet-switch { font-size: .875rem; }
+.sheet-fields { display: flex; flex-wrap: wrap; gap: 10px 14px; flex: 1; min-width: 240px; }
+.sheet-fields[hidden] { display: none; }
+.sheet-fields .field { margin: 0; flex: 1 1 160px; }
+.sheet-fields .sheet-remarks-field { flex: 2 1 220px; }
+.sheet-card { margin-bottom: 16px; }
+.sheet-choice {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  margin-bottom: 10px; padding: 10px 12px; border-radius: 8px;
+  background: var(--accent-soft); font-size: .875rem;
+}
+.sheet-choice[hidden] { display: none; }
+.sheet-status { margin: 0 0 8px; }
+.sheet-status:empty { display: none; }
+.sheet-status.good { color: var(--st-ok); }
+.sheet-status.warn { color: var(--st-choose); }
+.sheet-status.bad { color: var(--danger); font-weight: 600; }
+.sheet-table td { font-size: .8125rem; }
+.sheet-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sheet-table td.note { max-width: 260px; }
+.sheet-table .sheet-del { padding: 2px 8px; }

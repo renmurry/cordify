@@ -797,7 +797,9 @@ function initCordifyApp() {
       if (document.getElementById("history-tab")?.style.display !== "none") {
         window._cordify_renderHistory && window._cordify_renderHistory();
       }
-      showFeedback("Saved to history", "success");
+      // "Keep an Excel sheet" (sheet.js) adds the point too when it is switched on.
+      const sheetMsg = window.CordifySheet ? window.CordifySheet.onSave(rec) : null;
+      showFeedback(sheetMsg ? `Saved to history · ${sheetMsg}` : "Saved to history", "success");
     }
     // DMS -> DD. save=false: live preview only; save=true: also add to history.
     function updateDmsResult(save) {
@@ -834,7 +836,8 @@ function initCordifyApp() {
         type: "DMS→DD",
         input: `Lat: ${latStr}\nLon: ${lonStr}`,
         result: `Lat: ${lat.toFixed(prec)}\nLon: ${lon.toFixed(prec)}`,
-        date: Date.now()
+        date: Date.now(),
+        lat, lon
       });
       return true;
     }
@@ -875,7 +878,8 @@ function initCordifyApp() {
         type: "DD→DMS",
         input: `Lat: ${lat}\nLon: ${lon}`,
         result: `Lat: ${dms_lat}\nLon: ${dms_lon}`,
-        date: Date.now()
+        date: Date.now(),
+        lat, lon
       });
       return true;
     }
