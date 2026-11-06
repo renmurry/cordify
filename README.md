@@ -32,6 +32,9 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   new columns in decimal degrees, DMS and/or degrees + decimal minutes, or
   GeoJSON/KML. Without a boundary file, the area is estimated from the rows
   that are already correct (less reliable). Works for any area in the world.
+  While reviewing you can place a point by clicking the map, see flags for
+  duplicate points and points far from their village, and save your progress
+  to a small file to continue later.
 - **Installable (PWA)** — can be added to your home screen / desktop and works
   offline after the first visit (map tiles still need internet).
 

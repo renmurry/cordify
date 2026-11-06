@@ -18,16 +18,18 @@
     empty: { label: "Empty", cls: "st-empty" },
     confirmed: { label: "Checked", cls: "st-confirmed" },
     guess: { label: "Best guess", cls: "st-choose" },
+    placed: { label: "Placed by you", cls: "st-confirmed" },
     rejected: { label: "Rejected", cls: "st-bad" }
   };
-  const COLORS = { guess: "#e07b00", ok: "#2e7d32", fixed: "#c99700", choose: "#e07b00", outside: "#c62828", failed: "#c62828", confirmed: "#1565c0", rejected: "#c62828" };
+  const COLORS = { placed: "#1565c0", guess: "#e07b00", ok: "#2e7d32", fixed: "#c99700", choose: "#e07b00", outside: "#c62828", failed: "#c62828", confirmed: "#1565c0", rejected: "#c62828" };
 
   const state = {
     src: [], features: [], fieldKeys: [], nameField: "",
     source: "file", workbook: null, fileName: "", sheets: {}, rows: [],
     links: {}, learned: {}, results: [], decisions: new Map(),
     filter: "all", page: 0, map: null, boundaryLayer: null, pointLayer: null,
-    estimated: false, userSrc: [], userFeatures: []
+    estimated: false, userSrc: [], userFeatures: [], boundaryName: "",
+    flags: new Map(), placing: null, dirty: false, pendingResume: null
   };
 
   /* ---------------- Advanced mode + tab ---------------- */
@@ -284,6 +286,7 @@
         throw new Error("No polygons were found in this file.");
       }
       state.src = state.userSrc = src;
+      state.boundaryName = file.name;
       state.features = state.userFeatures = src.map((f, i) => R.buildFeature({ rings: f.rings, props: f.props }, i));
       state.estimated = false;
       const keys = new Set();
@@ -554,7 +557,7 @@
 
   /* ---------------- run + review ---------------- */
 
-  function run() {
+  function run(after) {
     state.rows = buildRows();
     if (!state.rows.length) return;
     let groupFeatures = {};
@@ -587,6 +590,8 @@
       setStatus("rp-run-status", `Done in ${((performance.now() - t) / 1000).toFixed(1)} s` + (state.estimated ? " — area estimated from correct rows, check results carefully" : ""), "good");
       $("rp-review").hidden = false;
       $("rp-export").hidden = false;
+      state.dirty = false;
+      if (typeof after === "function") after();
       renderReview();
       drawPoints(true);
     }, 20);
@@ -595,6 +600,9 @@
   function effective(i) {
     const res = state.results[i];
     const d = state.decisions.get(i);
+    if (d && d.manual) {
+      return { status: "placed", lat: d.manual.lat, lon: d.manual.lon, cand: null, res, manual: d.manual };
+    }
     if (d && d.rejected) {
       return { status: "rejected", lat: null, lon: null, cand: null, res };
     }
@@ -609,10 +617,56 @@
     const e = effective(i);
     if (e.status === "confirmed") return "checked by you" + (e.cand && e.cand.notes.length ? " — " + e.cand.notes.filter(n => !/^read as/.test(n)).join("; ") : "");
     if (e.status === "rejected") return "rejected by you";
+    if (e.status === "placed") return "placed by hand on the map" + (e.manual.inside ? "" : " — outside the boundary");
     if (e.status === "guess") return "best guess, not checked — " + e.res.notes.join("; ");
     const d = state.decisions.get(i);
     if (d && d.chosen != null && e.cand) return e.cand.notes.join("; ");
     return e.res.notes.join("; ");
+  }
+
+  // Same point for different rows, and points far from the rest of their village.
+  const FLAG_KM = 5;
+  function computeFlags() {
+    const flags = new Map();
+    const add = (i, f) => flags.set(i, (flags.get(i) || []).concat(f));
+    const byKey = new Map(), byVillage = new Map();
+    state.results.forEach((_, i) => {
+      const e = effective(i);
+      if (e.lat == null) return;
+      const k = `${e.lat.toFixed(5)},${e.lon.toFixed(5)}`;
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(i);
+      const row = state.rows[i];
+      if (row.village) {
+        const vk = `${row.group}||${row.village.toUpperCase()}`;
+        if (!byVillage.has(vk)) byVillage.set(vk, []);
+        byVillage.get(vk).push(i);
+      }
+    });
+    for (const list of byKey.values()) {
+      const places = new Set(list.map(i => `${state.rows[i].sheet}|${state.rows[i].rowIndex}`));
+      if (places.size < 2) continue;
+      for (const i of list) {
+        const others = list.filter(j => `${state.rows[j].sheet}|${state.rows[j].rowIndex}` !== `${state.rows[i].sheet}|${state.rows[i].rowIndex}`);
+        const names = others.slice(0, 2).map(j => `${state.rows[j].sheet} row ${state.rows[j].rowIndex + 1}${state.rows[j].village ? " (" + state.rows[j].village + ")" : ""}`);
+        add(i, { kind: "dup", text: `same point as ${names.join(", ")}${others.length > 2 ? ` and ${others.length - 2} more` : ""}` });
+      }
+    }
+    const med = a => {
+      const x = a.slice().sort((p, q) => p - q), m = x.length >> 1;
+      return x.length % 2 ? x[m] : (x[m - 1] + x[m]) / 2;
+    };
+    for (const list of byVillage.values()) {
+      if (list.length < 3) continue;
+      const pts = list.map(i => effective(i));
+      const c = { lat: med(pts.map(p => p.lat)), lon: med(pts.map(p => p.lon)) };
+      list.forEach((i, n) => {
+        const d = R.km(pts[n].lat, pts[n].lon, c.lat, c.lon);
+        if (d > FLAG_KM) add(i, { kind: "far", text: `${d.toFixed(1)} km from the other points of ${state.rows[i].village}` });
+      });
+    }
+    state.flags = flags;
+    return flags;
   }
 
   const signature = c => c ? c.notes.filter(n => !/km from|possible|other reading/.test(n)).join("|") : "";
@@ -631,17 +685,22 @@
     const out = [];
     state.results.forEach((r, i) => {
       const s = effective(i).status;
-      if (f === "all" ? s !== "empty" : f === "review" ? (s === "fixed" || s === "choose") : f === "problem" ? (s === "outside" || s === "failed" || s === "rejected") : s === f) out.push(i);
+      if (f === "flag") {
+        if (state.flags.has(i)) out.push(i);
+        return;
+      }
+      if (f === "all" ? s !== "empty" : f === "review" ? (s === "fixed" || s === "choose") : f === "problem" ? (s === "outside" || s === "failed" || s === "rejected") : f === "confirmed" ? (s === "confirmed" || s === "placed") : s === f) out.push(i);
     });
     return out;
   }
 
   function renderReview() {
+    computeFlags();
     const c = counts();
     const chips = [
       [ "all", "All", state.results.length - (c.empty || 0) ],
       [ "ok", "Unchanged", c.ok || 0 ], [ "fixed", "Corrected", c.fixed || 0 ], [ "choose", "Check", c.choose || 0 ],
-      [ "guess", "Best guess", c.guess || 0 ], [ "confirmed", "Checked by you", c.confirmed || 0 ], [ "problem", "Outside / not fixed", (c.outside || 0) + (c.failed || 0) + (c.rejected || 0) ],
+      [ "guess", "Best guess", c.guess || 0 ], [ "confirmed", "Checked by you", (c.confirmed || 0) + (c.placed || 0) ], [ "flag", "Flags", state.flags.size ], [ "problem", "Outside / not fixed", (c.outside || 0) + (c.failed || 0) + (c.rejected || 0) ],
       [ "empty", "Empty", c.empty || 0 ]
     ];
     $("rp-summary").innerHTML = chips.map(([ k, label, n ]) => `<button type="button" class="chip chip-${k}${state.filter === k ? " is-active" : ""}" data-filter="${k}">${label} <b>${n}</b></button>`).join("");
@@ -672,15 +731,18 @@
     const actions = [
       (res.status === "fixed" || res.status === "choose") && !(d && (d.confirmed || d.rejected)) ? `<button type="button" class="rp-confirm" data-i="${i}">Confirm</button>` : "",
       similar ? `<button type="button" class="btn-quiet rp-similar" data-i="${i}" title="Use the same kind of correction on rows typed the same way">Same for ${similar} similar</button>` : "",
+      e.status !== "empty" ? `<button type="button" class="btn-quiet rp-place" data-i="${i}" title="Click the map to set this point by hand">${e.status === "failed" || e.status === "outside" || e.status === "rejected" ? "Place on map" : "Move"}</button>` : "",
       e.lat != null ? `<button type="button" class="btn-quiet rp-zoom" data-i="${i}">Map</button>` : ""
     ].join("");
+    const fl = state.flags.get(i) || [];
+    const tags = fl.map(f => `<span class="flag flag-${f.kind}" title="${esc(f.text)}">${f.kind === "dup" ? "Duplicate" : "Far from village"}</span>`).join(" ");
     const where = (row.sheet === row.group ? esc(row.sheet) : `${esc(row.sheet)} · ${esc(row.group)}`) + (row.multi ? ` · ${esc(row.setLabel)}` : "");
     return `<tr class="${st.cls}" data-i="${i}">
       <td><span class="hint">${where} · row ${row.rowIndex + 1}</span><br>${esc(row.village || "")}</td>
       <td><pre class="raw">${esc(row.raw)}</pre></td>
       <td class="num">${e.lat != null ? `${fmt(e.lat)}<br>${fmt(e.lon)}` : "—"}</td>
       <td><span class="badge ${st.cls}">${st.label}</span>${e.status !== "empty" && e.status !== "ok" ? `<br><span class="hint">${res.confidence}%</span>` : ""}</td>
-      <td class="note">${esc(noteFor(i))}</td>
+      <td class="note">${tags ? tags + "<br>" : ""}${esc([ noteFor(i), ...fl.map(f => f.text) ].filter(Boolean).join("; "))}</td>
       <td>${choice}</td>
       <td class="row-actions">${actions}</td>
     </tr>`;
@@ -708,8 +770,7 @@
     if (b.classList.contains("rp-confirm")) {
       const d = state.decisions.get(i) || {};
       state.decisions.set(i, { ...d, confirmed: true });
-      renderReview();
-      drawPoints();
+      changed();
     } else if (b.classList.contains("rp-similar")) {
       const d = state.decisions.get(i) || {};
       const k = d.chosen != null ? d.chosen : state.results[i].chosen;
@@ -723,9 +784,10 @@
         }
       }
       state.decisions.set(i, { chosen: k, confirmed: true });
-      renderReview();
-      drawPoints();
+      changed();
       flash(`Applied to ${n + 1} rows — marked as checked by you`);
+    } else if (b.classList.contains("rp-place")) {
+      startPlacing(i);
     } else if (b.classList.contains("rp-zoom")) {
       const ef = effective(i);
       ensureMap();
@@ -740,6 +802,11 @@
     const i = +s.dataset.i;
     if (s.value === "reject") state.decisions.set(i, { rejected: true });
     else state.decisions.set(i, { chosen: +s.value, confirmed: true });
+    changed();
+  }
+
+  function changed() {
+    state.dirty = true;
     renderReview();
     drawPoints();
   }
@@ -749,11 +816,158 @@
     setTimeout(() => setStatus("rp-review-status", ""), 4000);
   }
 
+  /* ---------------- placing a point by hand ---------------- */
+
+  function startPlacing(i) {
+    ensureMap();
+    if (!state.map) return;
+    state.placing = i;
+    const row = state.rows[i];
+    $("rp-place-text").textContent = `Click the map to place ${row.sheet} row ${row.rowIndex + 1}${row.village ? " (" + row.village + ")" : ""}.`;
+    $("rp-place-banner").hidden = false;
+    $("rp-map").classList.add("is-placing");
+    // Zoom to where this point probably belongs: its village, else its current position.
+    const mates = state.results.map((_, j) => j).filter(j => j !== i && row.village && state.rows[j].village === row.village && state.rows[j].group === row.group && effective(j).lat != null);
+    const e = effective(i);
+    if (mates.length) {
+      const la = mates.map(j => effective(j).lat).sort((a, b) => a - b), lo = mates.map(j => effective(j).lon).sort((a, b) => a - b);
+      state.map.setView([ la[la.length >> 1], lo[lo.length >> 1] ], 14);
+    } else if (e.lat != null) {
+      state.map.setView([ e.lat, e.lon ], 14);
+    } else {
+      fitMap();
+    }
+    $("rp-map-wrap").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function stopPlacing() {
+    state.placing = null;
+    $("rp-place-banner").hidden = true;
+    $("rp-map").classList.remove("is-placing");
+  }
+
+  function onMapClick(ev) {
+    if (state.placing == null) return;
+    const i = state.placing;
+    const lat = ev.latlng.lat, lon = ev.latlng.lng;
+    const g = state.rows[i].group;
+    const idx = state.links[g];
+    const target = idx !== undefined && idx !== "all" && state.features[+idx] ? [ state.features[+idx] ] : state.features;
+    const inside = !target.length || !!R.featureAt(target, lon, lat);
+    state.decisions.set(i, { manual: { lat, lon, inside } });
+    stopPlacing();
+    changed();
+    flash(`Placed at ${fmt(lat)}, ${fmt(lon)}${inside ? "" : " — note: outside the boundary"}`);
+  }
+
+  /* ---------------- save & resume ---------------- */
+
+  const rowKey = r => `${r.sheet}|${r.rowIndex}|${r.set ?? 0}`;
+
+  function saveReview() {
+    const decisions = [];
+    state.decisions.forEach((d, i) => {
+      const r = state.rows[i], e = effective(i);
+      const out = { key: rowKey(r), raw: r.raw };
+      if (d.manual) out.manual = d.manual;
+      else if (d.rejected) out.rejected = true;
+      else {
+        out.lat = e.lat;
+        out.lon = e.lon;
+        if (d.confirmed) out.confirmed = true;
+        if (d.guess) out.guess = true;
+      }
+      decisions.push(out);
+    });
+    const sheets = {};
+    for (const [ n, s ] of Object.entries(state.sheets)) {
+      sheets[n] = { sets: s.sets, village: s.village };
+    }
+    const data = {
+      app: "cordify-repair", version: 1, saved: new Date().toISOString(),
+      fileName: state.fileName, source: state.source, paste: state.source === "paste" ? $("rp-paste").value : undefined,
+      boundary: state.boundaryName, groupBy: $("rp-groupby").value, sheets, links: state.links,
+      digitFix: $("rp-digitfix").checked, decisions
+    };
+    download(`${state.fileName || "cordify"}_review.json`, new Blob([ JSON.stringify(data, null, 1) ], { type: "application/json" }));
+    state.dirty = false;
+    flash(`Progress saved (${decisions.length} choices). Load it in step 3 next time.`);
+  }
+
+  async function onResumeFile(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!file) return;
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+      if (data.app !== "cordify-repair") throw new Error();
+    } catch (e) {
+      setStatus("rp-resume-status", "This is not a saved Cordify review.", "bad");
+      return;
+    }
+    if (data.source === "paste") {
+      document.querySelector('input[name="rp-source"][value="paste"]').click();
+      $("rp-paste").value = data.paste || "";
+    } else if (!state.workbook || state.fileName !== data.fileName) {
+      setStatus("rp-resume-status", `Load "${data.fileName}" in step 2 first, then load this review again.`, "bad");
+      return;
+    }
+    if (data.boundary && state.boundaryName !== data.boundary) {
+      setStatus("rp-resume-status", `This review used the boundary "${data.boundary}". Load it in step 1 first${state.boundaryName ? " (a different boundary is loaded)" : ""}.`, "bad");
+      return;
+    }
+    if (data.source !== "paste") {
+      for (const [ n, s ] of Object.entries(data.sheets || {})) {
+        if (state.sheets[n]) {
+          state.sheets[n].sets = s.sets;
+          state.sheets[n].village = s.village;
+        }
+      }
+      renderSheets();
+      if ([ ...$("rp-groupby").options ].some(o => o.value === data.groupBy)) $("rp-groupby").value = data.groupBy;
+    }
+    $("rp-digitfix").checked = data.digitFix !== false;
+    refreshLinks();
+    for (const [ g, v ] of Object.entries(data.links || {})) {
+      if (g in state.links) {
+        state.links[g] = v;
+        const sel = document.querySelector(`#rp-links tr[data-group="${CSS.escape(g)}"] select`);
+        if (sel) sel.value = String(v);
+      }
+    }
+    run(() => {
+      const index = new Map(state.rows.map((r, i) => [ rowKey(r), i ]));
+      let ok = 0, skipped = 0;
+      for (const d of data.decisions || []) {
+        const i = index.get(d.key);
+        if (i == null || state.rows[i].raw !== d.raw) {
+          skipped++;
+          continue;
+        }
+        if (d.manual) state.decisions.set(i, { manual: d.manual });
+        else if (d.rejected) state.decisions.set(i, { rejected: true });
+        else {
+          const k = state.results[i].candidates.findIndex(c => Math.abs(c.lat - d.lat) < 1e-9 && Math.abs(c.lon - d.lon) < 1e-9);
+          if (k < 0) {
+            skipped++;
+            continue;
+          }
+          state.decisions.set(i, { chosen: k, confirmed: !!d.confirmed, guess: !!d.guess && !d.confirmed });
+        }
+        ok++;
+      }
+      state.dirty = false;
+      setStatus("rp-resume-status", `Restored ${ok} of ${(data.decisions || []).length} choices from ${new Date(data.saved).toLocaleString()}` + (skipped ? ` — ${skipped} rows changed since and were skipped` : ""), "good");
+    });
+  }
+
   /* ---------------- map ---------------- */
 
   function ensureMap() {
     if (state.map || typeof L === "undefined") return state.map;
     state.map = L.map("rp-map", { preferCanvas: true }).setView([ 0, 0 ], 2);
+    state.map.on("click", onMapClick);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(state.map);
     return state.map;
   }
@@ -806,7 +1020,7 @@
 
   /* ---------------- export ---------------- */
 
-  const STATUS_TEXT = { ok: "Unchanged", fixed: "Corrected - check", choose: "Needs check", guess: "Best guess - check", confirmed: "Checked by user", outside: "Outside boundary", failed: "Not fixed", rejected: "Rejected by user", empty: "Empty" };
+  const STATUS_TEXT = { placed: "Placed by user", ok: "Unchanged", fixed: "Corrected - check", choose: "Needs check", guess: "Best guess - check", confirmed: "Checked by user", outside: "Outside boundary", failed: "Not fixed", rejected: "Rejected by user", empty: "Empty" };
 
   function formats() {
     const f = {
@@ -820,15 +1034,16 @@
   // Values for one result in the chosen formats, plus status columns.
   function exportValues(i, f = formats()) {
     const e = effective(i);
-    const keep = [ "ok", "fixed", "choose", "guess", "confirmed" ].includes(e.status) && e.lat != null;
+    const keep = [ "ok", "fixed", "choose", "guess", "confirmed", "placed" ].includes(e.status) && e.lat != null;
     const lat = keep ? e.lat : null, lon = keep ? e.lon : null;
     const cols = [];
     if (f.dd) cols.push([ "Lat_DD", lat == null ? "" : R.formatDD(lat, f.ddDigits) ], [ "Lon_DD", lon == null ? "" : R.formatDD(lon, f.ddDigits) ]);
     if (f.dms) cols.push([ "Lat_DMS", R.formatDMS(lat, "lat", f.secDigits) ], [ "Lon_DMS", R.formatDMS(lon, "lon", f.secDigits) ]);
     if (f.ddm) cols.push([ "Lat_DDM", R.formatDDM(lat, "lat", f.minDigits) ], [ "Lon_DDM", R.formatDDM(lon, "lon", f.minDigits) ]);
     cols.push([ "Repair_Status", STATUS_TEXT[e.status] || e.status ],
-      [ "Confidence", e.status === "empty" ? "" : e.status === "confirmed" ? 100 : e.res.confidence ],
-      [ "Repair_Note", noteFor(i) ]);
+      [ "Confidence", e.status === "empty" ? "" : e.status === "confirmed" || e.status === "placed" ? 100 : e.res.confidence ],
+      [ "Repair_Note", noteFor(i) ],
+      [ "Repair_Flags", (state.flags.get(i) || []).map(f => f.text).join("; ") ]);
     return { lat, lon, cols };
   }
 
@@ -913,7 +1128,7 @@
 
   function exportKml() {
     const x = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const style = { "Unchanged": "ok", "Checked by user": "checked", "Corrected - check": "fixed", "Needs check": "check", "Best guess - check": "check" };
+    const style = { "Placed by user": "checked", "Unchanged": "ok", "Checked by user": "checked", "Corrected - check": "fixed", "Needs check": "check", "Best guess - check": "check" };
     const color = { ok: "ff327d2e", checked: "ffc06515", fixed: "ff0097c9", check: "ff007be0" };
     const styles = Object.entries(color).map(([ id, c ]) => `<Style id="${id}"><IconStyle><color>${c}</color><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>`).join("");
     const pms = pointFeatures().map(f => {
@@ -985,8 +1200,7 @@
         const d = state.decisions.get(i);
         if (r.status === "fixed" && !(d && (d.confirmed || d.rejected))) state.decisions.set(i, { ...(d || {}), confirmed: true });
       });
-      renderReview();
-      drawPoints();
+      changed();
     });
     $("rp-guess-all").addEventListener("click", () => {
       let n = 0;
@@ -997,8 +1211,7 @@
           n++;
         }
       });
-      renderReview();
-      drawPoints();
+      changed();
       flash(`${n} rows set to their best guess — they stay marked "Best guess" until you confirm them`);
     });
     // Export formats: remembered per browser
@@ -1018,6 +1231,18 @@
         localStorage.setItem("cordify_repair_formats", JSON.stringify(o));
       } catch (e) {}
     }));
+    $("rp-save").addEventListener("click", saveReview);
+    $("rp-resume").addEventListener("change", onResumeFile);
+    $("rp-place-cancel").addEventListener("click", stopPlacing);
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && state.placing != null) stopPlacing();
+    });
+    window.addEventListener("beforeunload", e => {
+      if (state.dirty && state.decisions.size) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
     $("rp-export-xlsx").addEventListener("click", exportWorkbook);
     $("rp-export-geojson").addEventListener("click", exportGeoJson);
     $("rp-export-kml").addEventListener("click", exportKml);

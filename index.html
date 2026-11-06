@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=5">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=6">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -285,11 +285,21 @@
         <label class="rp-check"><input type="checkbox" id="rp-digitfix" checked> Also try a wrong degree digit (29.84 → 26.84) — always marked for checking</label>
         <div class="actions rp-run-row">
           <button type="button" class="btn-primary" id="rp-run" disabled>Repair coordinates</button>
-          <span id="rp-run-status" class="hint">Load a boundary first</span>
+          <span id="rp-run-status" class="hint">Load coordinates first</span>
+        </div>
+        <div class="rp-resume-row">
+          <label class="rp-filebtn">Continue a saved review…
+            <input type="file" id="rp-resume" accept=".json,application/json">
+          </label>
+          <span id="rp-resume-status" class="hint"></span>
         </div>
       </section>
 
       <div id="rp-map-wrap" class="card rp-step" hidden>
+        <div id="rp-place-banner" class="rp-place-banner" hidden>
+          <span id="rp-place-text"></span>
+          <button type="button" id="rp-place-cancel" class="btn-quiet">Cancel (Esc)</button>
+        </div>
         <div id="rp-map"></div>
       </div>
 
@@ -299,6 +309,7 @@
           <div class="actions">
             <button type="button" id="rp-confirm-all">Confirm all corrected</button>
             <button type="button" id="rp-guess-all" title="Rows stay marked 'Best guess' until you confirm them">Use best guess for all to check</button>
+            <button type="button" id="rp-save" title="Download your choices so you can continue later">Save progress</button>
             <span id="rp-review-status" class="hint"></span>
           </div>
         </div>
@@ -360,7 +371,7 @@
   <script src="./assets/js/historyStore.js"></script>
   <script src="./assets/js/app.js?v=13"></script>
   <script src="./assets/js/repair-engine.js?v=2"></script>
-  <script src="./assets/js/repair-ui.js?v=2"></script>
+  <script src="./assets/js/repair-ui.js?v=3"></script>
 
 <script>
   if ('serviceWorker' in navigator) {

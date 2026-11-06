@@ -319,6 +319,30 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
 .rp-fmt { display: inline-flex; align-items: center; gap: 6px; font-size: .875rem; }
 .rp-fmt select { padding: 4px 6px; font-size: .8125rem; }
 .rp-addset { padding: 4px 8px; font-size: .8125rem; }
+.rp-resume-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.rp-filebtn {
+  position: relative; display: inline-block; cursor: pointer;
+  font-size: .875rem; font-weight: 600; color: var(--muted);
+  padding: 7px 12px; border: 1px dashed var(--line); border-radius: 8px;
+}
+.rp-filebtn:hover { color: var(--ink); border-color: var(--muted); }
+.rp-filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.rp-filebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rp-place-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-bottom: 6px; padding: 8px 12px; border-radius: 8px;
+  background: var(--st-confirmed); color: #fff; font-size: .875rem; font-weight: 600;
+}
+.rp-place-banner[hidden] { display: none; }
+.rp-place-banner .btn-quiet { color: #fff; }
+#rp-map.is-placing, #rp-map.is-placing .leaflet-interactive { cursor: crosshair; }
+.flag {
+  display: inline-block; margin-bottom: 2px; padding: 1px 7px; border-radius: 999px;
+  font-size: .6875rem; font-weight: 700; color: var(--ink);
+  border: 1px solid var(--st-choose); background: var(--surface);
+}
+.flag-far { border-color: var(--st-bad); }
+.chip-flag b { color: var(--st-bad); }
 .chip-guess b { color: var(--st-choose); }
 @media (max-width: 640px) {
   #rp-map { height: 320px; }
