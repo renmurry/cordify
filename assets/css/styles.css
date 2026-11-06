@@ -356,3 +356,50 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
   #rp-map { height: 320px; }
   .rp-table pre.raw, .rp-table td.note { max-width: 180px; }
 }
+
+/* ---------- Tooltips (tips.js) ---------- */
+.tip {
+  position: fixed; z-index: 3000; pointer-events: none;
+  padding: 7px 10px; border-radius: 8px;
+  background: var(--ink); color: var(--surface);
+  font-size: .8125rem; font-weight: 500; line-height: 1.4;
+  box-shadow: 0 2px 10px rgba(15, 40, 38, .25);
+  opacity: 0; transform: translateY(-3px); transition: opacity .12s ease, transform .12s ease;
+}
+.tip.show { opacity: 1; transform: translateY(0); }
+.help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; margin-left: 4px; vertical-align: 2px;
+  border-radius: 50%; font-size: .75rem; font-weight: 700; line-height: 1;
+  color: var(--muted); background: var(--bg); border: 1px solid var(--line);
+}
+.help:hover { color: var(--ink); border-color: var(--muted); }
+.coach {
+  position: fixed; z-index: 2500;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px 10px; border-radius: 12px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: .875rem; box-shadow: 0 4px 16px rgba(15, 40, 38, .3);
+}
+.coach::before {
+  content: ""; position: absolute; top: -7px; left: calc(var(--arrow-x, 50%) - 7px);
+  border: 7px solid transparent; border-top: 0; border-bottom-color: var(--accent);
+}
+.coach .btn-quiet { align-self: flex-end; color: var(--accent-ink); padding: 4px 8px; }
+@media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+
+/* ---------- Batch convert ---------- */
+.batch-formats { margin: 4px 0 12px; }
+.batch-status { margin: 10px 0 0; }
+.batch-status:empty { display: none; }
+.batch-status.good { color: var(--st-ok); }
+.batch-status.warn { color: var(--st-choose); font-weight: 600; }
+.batch-status.bad { color: var(--danger); font-weight: 600; }
+.batch-repair { margin-left: 4px; padding: 3px 8px; text-decoration: underline; color: inherit; }
+.batch-preview-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.batch-table td { font-size: .8125rem; }
+.batch-table pre.raw { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; max-width: 240px; }
+.batch-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.batch-table tr.batch-fail td { background: var(--st-bad-bg); }
+tr.batch-nocols td { background: var(--st-choose-bg); }
+#batch-mapping .table select { max-width: 220px; }

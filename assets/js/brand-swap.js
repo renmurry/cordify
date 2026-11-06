@@ -11,7 +11,7 @@
   const DURATION = 750;
   wrap.innerHTML =
     '<span class="sr-only">DMS to decimal degrees</span>' +
-    '<span class="swap" aria-hidden="true" title="Click me">' +
+    '<span class="swap" aria-hidden="true" data-tip="Click to swap">' +
     '<span class="swap-word">DMS</span><span class="swap-arrow">⇄</span><span class="swap-word">decimal degrees</span>' +
     "</span>";
   const box = wrap.querySelector(".swap");
