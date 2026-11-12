@@ -13,11 +13,11 @@
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory();
+    module.exports = factory(require("./core.js"));
   } else {
-    root.CordifyRepair = factory();
+    root.CordifyRepair = factory(root.CordifyCore);
   }
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : this, function (Core) {
   "use strict";
 
   const SEP_PRIORITY = { dot: 4, deg: 3, min: 2, sec: 2, space: 1 };
@@ -781,32 +781,8 @@
 
   /* ---------- output formats ---------- */
 
-  const hemiFor = (v, role) => role === "lat" ? (v < 0 ? "S" : "N") : (v < 0 ? "W" : "E");
-
-  // 26.189922 -> 26° 11' 23.72" N  (rounded once, so 59.999" never shows as 60")
-  function formatDMS(v, role, secDigits = 2) {
-    if (v == null || !Number.isFinite(v)) return "";
-    const f = Math.pow(10, secDigits);
-    const units = Math.round(Math.abs(v) * 3600 * f);
-    const deg = Math.floor(units / (3600 * f));
-    const min = Math.floor((units - deg * 3600 * f) / (60 * f));
-    const sec = (units - deg * 3600 * f - min * 60 * f) / f;
-    return `${deg}° ${min}' ${sec.toFixed(secDigits)}" ${units ? hemiFor(v, role) : role === "lat" ? "N" : "E"}`;
-  }
-
-  // 26.189922 -> 26° 11.3953' N
-  function formatDDM(v, role, minDigits = 4) {
-    if (v == null || !Number.isFinite(v)) return "";
-    const f = Math.pow(10, minDigits);
-    const units = Math.round(Math.abs(v) * 60 * f);
-    const deg = Math.floor(units / (60 * f));
-    const min = (units - deg * 60 * f) / f;
-    return `${deg}° ${min.toFixed(minDigits)}' ${units ? hemiFor(v, role) : role === "lat" ? "N" : "E"}`;
-  }
-
-  function formatDD(v, digits = 6) {
-    return v == null || !Number.isFinite(v) ? "" : +v.toFixed(digits);
-  }
+  // Written by core.js, the same code the converter uses.
+  const { formatDMS, formatDDM, formatDD } = Core;
 
   /*
    * No boundary? Estimate an area per group from the rows that are already

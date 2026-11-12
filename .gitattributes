@@ -1,0 +1,2 @@
+# Third-party files are stored byte for byte, so their checksums stay valid.
+assets/vendor/** -text

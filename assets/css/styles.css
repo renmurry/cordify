@@ -64,6 +64,7 @@ h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
 }
 .brand { display: flex; align-items: baseline; gap: 10px; }
 .brand-name { font-size: 1.25rem; font-weight: 750; letter-spacing: -0.01em; }
+button.brand-name { padding: 4px 0; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
 .brand-sub { font-size: .875rem; color: var(--muted); }
 /* Swapping subtitle (brand-swap.js) */
 .swap { display: inline-flex; align-items: baseline; gap: .4em; cursor: pointer; user-select: none; }
@@ -396,6 +397,17 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
 .batch-status.warn { color: var(--st-choose); font-weight: 600; }
 .batch-status.bad { color: var(--danger); font-weight: 600; }
 .batch-repair { margin-left: 4px; padding: 3px 8px; text-decoration: underline; color: inherit; }
+.batch-gis { margin-top: 10px; align-items: center; }
+/* Batch: progress, and a preview that only draws the rows on screen */
+.batch-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 12px; }
+.batch-progress progress { flex: 1 1 220px; height: 10px; accent-color: var(--accent); }
+.vt { height: 600px; max-height: 80vh; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 8px; }
+.vt-view { position: sticky; top: 0; height: 100%; overflow-x: visible; overflow-y: clip; display: flex; flex-direction: column; background: var(--surface); }
+.vt-view.vt-end { justify-content: flex-end; }
+.vt .table-wrap { overflow: visible; flex: none; }
+.vt thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.vt-small { height: auto; max-height: none; }
+.vt-small .vt-view { position: static; height: auto; overflow-y: visible; }
 .batch-preview-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
 .batch-table td { font-size: .8125rem; }
 .batch-table pre.raw { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; max-width: 240px; }
@@ -407,6 +419,12 @@ tr.batch-nocols td { background: var(--st-choose-bg); }
 /* ---------- Keep an Excel sheet ---------- */
 .sheet-bar { margin-bottom: 16px; padding: 12px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
 .sheet-switch { font-size: .875rem; }
+/* "Also give Easting / Northing" picker (grid.js) */
+.grid-bar .field { margin: 0; flex: 0 1 300px; }
+.grid-bar .grid-def-field { flex: 2 1 320px; }
+.grid-note { flex: 1 1 100%; margin: 0; }
+.grid-note:empty { display: none; }
+.grid-note.bad { color: var(--danger); }
 .sheet-fields { display: flex; flex-wrap: wrap; gap: 10px 14px; flex: 1; min-width: 240px; }
 .sheet-fields[hidden] { display: none; }
 .sheet-fields .field { margin: 0; flex: 1 1 160px; }
@@ -427,3 +445,120 @@ tr.batch-nocols td { background: var(--st-choose-bg); }
 .sheet-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sheet-table td.note { max-width: 260px; }
 .sheet-table .sheet-del { padding: 2px 8px; }
+
+/* ==========================================================================
+   Looks (looks.js): tap the name "Cordify" to change.
+     (none)  Solid, everything above this line. No blur, strongest contrast.
+     frost   Translucent glass over soft colour. Follows light / dark mode.
+     neon    Always dark, glowing outlines on the buttons.
+   Written for the smallest screen first; wider screens only add rules.
+   ========================================================================== */
+
+/* ---------- shared by Frost and Neon ---------- */
+html[data-look] {
+  --glass: rgba(255, 255, 255, .56);        /* cards and the header */
+  --field: rgba(255, 255, 255, .72);        /* inputs and plain buttons */
+  --bar: rgba(255, 255, 255, .8);           /* the bottom tab bar on phones: it floats over the map, so it is nearly solid */
+  --edge: rgba(255, 255, 255, .8);          /* the bright rim of a pane */
+  --pane-shadow: rgba(16, 48, 44, .28);
+  --hover: rgba(18, 35, 31, .06);
+  --b1: #86d6c8; --b2: #f3c891; --b3: #9dbdee;
+}
+html[data-look] body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(60% 50% at 8% 0%, var(--b1), transparent 70%),
+    radial-gradient(45% 45% at 100% 28%, var(--b2), transparent 70%),
+    radial-gradient(60% 50% at 40% 108%, var(--b3), transparent 70%);
+}
+html[data-look] .card {
+  background: var(--glass); border-color: var(--edge);
+  -webkit-backdrop-filter: blur(18px) saturate(160%); backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: inset 0 1px 0 var(--edge), 0 14px 34px -18px var(--pane-shadow);
+}
+/* The header's glass is a layer behind it, so the bottom tab bar on phones can still be pinned to the screen. */
+html[data-look] .app-header { background: transparent; border-bottom-color: var(--edge); }
+html[data-look] .app-header::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(22px) saturate(170%); backdrop-filter: blur(22px) saturate(170%);
+}
+html[data-look] :is(input[type="text"], input[type="number"], select, #rp-paste),
+html[data-look] button:not(.btn-primary):not(.btn-quiet):not(.tab-btn):not(.brand-name),
+html[data-look] input[type="file"]::file-selector-button,
+html[data-look] .fab-menu > summary { background: var(--field); }
+html[data-look] :is(.tabs, .seg) { background: var(--hover); }
+html[data-look] .tab-btn.is-active,
+html[data-look] .seg label:has(input:checked) { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+html[data-look] .table tr:hover td { background: var(--hover); }
+html[data-look] .vt-view { background: transparent; }
+html[data-look] .fab-menu-list { -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+/* No blur available: fall back to solid panes so text never sits on a busy background. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-look] .card, html[data-look] .app-header::before { background: var(--surface); }
+}
+
+/* Phones: the tabs become a bar at the bottom, within thumb reach; the header keeps the name. */
+@media (max-width: 640px) {
+  html[data-look] .tabs {
+    position: fixed; z-index: 1150;
+    left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right));
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    padding: 4px; border: 1px solid var(--edge); border-radius: 16px;
+    background: var(--bar);
+    -webkit-backdrop-filter: blur(22px) saturate(170%); backdrop-filter: blur(22px) saturate(170%);
+    box-shadow: 0 10px 30px -12px var(--pane-shadow);
+  }
+  html[data-look] .tab-btn { flex: 1; min-height: 44px; border-radius: 12px; }
+  html[data-look] .page { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
+  html[data-look] .feedback { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  html[data-look] #map-tab .leaflet-bottom { bottom: calc(66px + env(safe-area-inset-bottom)); }
+  html[data-look] .brand-sub { display: inline; }
+  html[data-look] button.brand-name { min-height: 44px; }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    html[data-look] .tabs { background: var(--surface); }
+  }
+}
+
+/* ---------- Frost in dark mode ---------- */
+@media (prefers-color-scheme: dark) {
+  html[data-look="frost"] {
+    --glass: rgba(255, 255, 255, .07); --field: rgba(0, 0, 0, .28); --edge: rgba(255, 255, 255, .16);
+    --pane-shadow: rgba(0, 0, 0, .6); --hover: rgba(255, 255, 255, .07); --bar: rgba(16, 30, 28, .82);
+    --b1: #0f7068; --b2: #7a4a1e; --b3: #2a4688;
+  }
+}
+
+/* ---------- Neon: one deliberate dark look, whatever the device setting ---------- */
+html[data-look="neon"] {
+  color-scheme: dark;
+  --bg: #060b12; --surface: #0d1620; --ink: #eafcff; --muted: #a3c6ce;
+  --line: rgba(120, 240, 255, .3); --accent: #22e6ff; --accent-ink: #021318; --accent-soft: rgba(34, 230, 255, .12);
+  --danger: #ff8fa0;
+  --st-ok: #7cf0a0; --st-fixed-bg: #3a3416; --st-choose-bg: #3d2a12; --st-bad-bg: #3a1c24; --st-confirmed: #8fb8ea;
+  --glass: rgba(255, 255, 255, .055); --field: rgba(8, 18, 26, .7); --edge: rgba(140, 240, 255, .22);
+  --pane-shadow: rgba(0, 0, 0, .7); --hover: rgba(120, 240, 255, .08); --bar: rgba(8, 18, 26, .86);
+  --b1: #0b5a70; --b2: #6a1560; --b3: #1b2a8a;
+  --neon1: #22e6ff; --neon2: #ff4fd8;
+}
+html[data-look="neon"] button:not(.btn-quiet):not(.tab-btn):not(.brand-name):not(.help):not(:disabled),
+html[data-look="neon"] input[type="file"]::file-selector-button,
+html[data-look="neon"] .fab-menu > summary,
+html[data-look="neon"] .rp-filebtn {
+  border-color: var(--neon1); border-style: solid;
+  box-shadow: 0 0 12px -2px var(--neon1), inset 0 0 10px -6px var(--neon1);
+  transition: box-shadow .15s ease;
+}
+html[data-look="neon"] button:not(.btn-quiet):not(.tab-btn):not(.brand-name):not(.help):not(:disabled):hover {
+  border-color: var(--neon1); box-shadow: 0 0 20px 0 var(--neon1), inset 0 0 12px -4px var(--neon1);
+}
+html[data-look="neon"] .btn-primary:not(:disabled),
+html[data-look="neon"] .btn-primary:not(:disabled):hover { border-color: var(--neon2); box-shadow: 0 0 16px 0 var(--neon2), 0 0 2px 1px var(--neon2); filter: none; }
+html[data-look="neon"] .btn-primary:not(:disabled):hover { box-shadow: 0 0 26px 2px var(--neon2), 0 0 2px 1px var(--neon2); }
+html[data-look="neon"] .tab-btn.is-active,
+html[data-look="neon"] .seg label:has(input:checked) { box-shadow: 0 0 14px -1px var(--neon1); }
+html[data-look="neon"] .brand-name { text-shadow: 0 0 14px var(--neon1), 0 0 2px var(--neon1); }
+html[data-look="neon"] textarea.result { box-shadow: inset 3px 0 12px -4px var(--neon1); }
+@media (prefers-reduced-motion: reduce) {
+  html[data-look="neon"] button { transition: none; }
+}

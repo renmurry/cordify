@@ -19,7 +19,8 @@
       // Clear clean state (test key only - real history is untouched)
       historyStore.clear();
 
-      // add up to more than cap
+      // add up to more than cap (the real cap is far higher; 200 keeps this quick)
+      historyStore.setCap(200);
       for (let i=0;i<205;i++) historyStore.add({ type: i%2? 'DMS→DD':'DD→DMS', input: 'in'+i, output:'out'+i, meta:{precision:6}});
       const all = historyStore.getAll();
       expect('cap at 200', all.length===200);

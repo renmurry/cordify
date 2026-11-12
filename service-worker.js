@@ -4,50 +4,51 @@
 //     updates immediately), falling back to cache when offline.
 //   - Everything else: cache-first.
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
-const CACHE_NAME = 'cordify-cache-v12';
+const CACHE_NAME = 'cordify-cache-v17';
 const PRECACHE = [
   './',
   './index.html',
   './favicon.ico',
   './manifest.json',
   './assets/css/styles.css',
+  './assets/js/core.js',
+  './assets/js/grid.js',
   './assets/js/app.js',
   './assets/js/historyStore.js',
   './assets/js/repair-engine.js',
   './assets/js/repair-ui.js',
   './assets/js/brand-swap.js',
+  './assets/js/looks.js',
   './assets/js/batch.js',
+  './assets/js/batch-core.js',
+  './assets/js/batch-worker.js',
+  './assets/js/db.js',
+  './assets/js/geo-io.js',
   './assets/js/tips.js',
   './assets/js/sheet.js',
   './assets/icons/icon-192.png',
-  './assets/icons/icon-512.png'
+  './assets/icons/icon-512.png',
+  // Libraries, kept in the repo so nothing is fetched from another site.
+  './assets/vendor/leaflet/leaflet.css',
+  './assets/vendor/leaflet/leaflet.js',
+  './assets/vendor/leaflet/images/marker-icon.png',
+  './assets/vendor/leaflet/images/marker-icon-2x.png',
+  './assets/vendor/leaflet/images/marker-shadow.png',
+  './assets/vendor/leaflet/images/layers.png',
+  './assets/vendor/leaflet/images/layers-2x.png',
+  './assets/vendor/proj4.js',
+  './assets/vendor/jszip.min.js',
+  './assets/vendor/xlsx.full.min.js',
+  './assets/vendor/sql-wasm.js',
+  './assets/vendor/sql-wasm.wasm'
 ];
-// Pinned library versions (must match index.html). Cached so batch, map and
-// KMZ export work offline. Map tiles still need internet.
-const CDN_ASSETS = [
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  'https://cdn.jsdelivr.net/npm/proj4@2.8.1/dist/proj4.js',
-  'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
-  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'
-];
+// Map tiles are the only thing that still needs the internet.
 
 self.addEventListener('install', event => {
   self.skipWaiting();
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     await cache.addAll(PRECACHE);
-    // Best effort: a CDN failure must not block install.
-    await Promise.all(CDN_ASSETS.map(async url => {
-      try {
-        const mode = url.includes('sheetjs') ? 'no-cors' : 'cors';
-        const res = await fetch(url, { mode });
-        if (res.ok || res.type === 'opaque') await cache.put(url, res);
-      } catch (e) {}
-    }));
   })());
 });
 
@@ -88,22 +89,7 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  if (CDN_ASSETS.includes(req.url)) {
-    // Pinned versions never change: cache-first, store on first fetch.
-    event.respondWith((async () => {
-      const cached = await caches.match(req);
-      if (cached) return cached;
-      const fresh = await fetch(req);
-      if (fresh.ok || fresh.type === 'opaque') {
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, fresh.clone());
-      }
-      return fresh;
-    })());
-    return;
-  }
-
-  // Cache-first for other same-origin assets (icons, etc.)
+  // Cache-first for everything else (icons, library images, the .wasm file)
   event.respondWith(
     caches.match(req, { ignoreSearch: true }).then(hit => hit || fetch(req))
   );

@@ -16,6 +16,17 @@ if (document.readyState === "loading") {
 function initCordifyApp() {
   (function() {
     const MAX_HISTORY = 1e3;
+    // Reading and writing coordinates lives in core.js, shared with Batch, the sheet and Repair.
+    const Core = window.CordifyCore;
+    const { parseDmsString, parseCoord, parseDecimal, splitPair, inLatRange, inLonRange } = Core;
+    const ddToDms = (dd, latlon, secDigits = 3) => Core.formatDMS(dd, latlon, secDigits, true) || null;
+    // The exact (unrounded) point behind each result box, for the map.
+    const lastPoint = { dd: null, dms: null };
+    const gridLines = (lat, lon) => window.CordifyGrid ? window.CordifyGrid.lines(lat, lon) : "";
+    const gridOf = (lat, lon) => {
+      const p = window.CordifyGrid ? window.CordifyGrid.project(lat, lon) : null;
+      return p && !p.error ? p : undefined;
+    };
     const OLD_KEY = "cordify_history_v1";
     function _fallback_getHistory() {
       try {
@@ -37,7 +48,9 @@ function initCordifyApp() {
         type: rec.type || "",
         input: String(rec.input ?? ""),
         result: String(rec.result ?? ""),
-        date: rec.date || Date.now()
+        date: rec.date || Date.now(),
+        lat: rec.lat,
+        lon: rec.lon
       });
       _fallback_setHistory(arr);
     }
@@ -67,7 +80,10 @@ function initCordifyApp() {
           type: r.type || "",
           input: r.input || "",
           result: r.output || r.result || "",
-          date: r.date || r.ts || r.ts
+          date: r.date || r.ts || r.ts,
+          lat: r.lat,
+          lon: r.lon,
+          grid: r.grid
         }));
       }
       return _fallback_getHistory();
@@ -80,6 +96,10 @@ function initCordifyApp() {
             input: String(rec.input ?? ""),
             output: String(rec.result ?? ""),
             date: rec.date,
+            // Full-precision numbers, so the map and exports never depend on the rounded text.
+            lat: rec.lat,
+            lon: rec.lon,
+            grid: rec.grid,
             meta: rec.meta || {}
           });
           return;
@@ -334,6 +354,10 @@ function initCordifyApp() {
       } catch {
         setDmsMode("text", false);
       }
+      window.addEventListener("cordify:grid-change", () => {
+        updateDmsResult(false);
+        updateDdResult(false);
+      });
       document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
       document.getElementById("history-export-json")?.addEventListener("click", () => {
         try {
@@ -399,7 +423,8 @@ function initCordifyApp() {
           emptyMsg.style.display = "none";
         }
         table.style.display = "";
-        arr.forEach((item, i) => {
+        const SHOWN = 500;
+        arr.slice(0, SHOWN).forEach((item, i) => {
           const tr = document.createElement("tr");
           tr.innerHTML = `\n        <td>${i + 1}</td>\n        <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.input)}">${escapeHtml(item.input)}</pre></td>\n        <td><pre style="white-space:pre-wrap;margin:0" title="${escapeHtml(item.result)}">${escapeHtml(item.result)}</pre></td>\n        <td>${item.date ? new Date(item.date).toLocaleString() : ""}</td>\n        <td></td>\n      `;
           const actionsTd = tr.querySelector("td:last-child");
@@ -446,6 +471,15 @@ function initCordifyApp() {
           actionsTd.appendChild(delBtn);
           tbody.appendChild(tr);
         });
+        if (arr.length > SHOWN) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 5;
+          td.className = "hint";
+          td.textContent = `Showing the newest ${SHOWN} of ${arr.length} saved conversions. Exports and “Plot all” include all of them.`;
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
       }
       window._cordify_renderHistory = renderHistoryTable;
       window._cordify_persistInputs = persistInputs;
@@ -496,6 +530,8 @@ function initCordifyApp() {
           Type: item.type || "",
           Input: item.input,
           Result: item.result,
+          Lat: Number.isFinite(item.lat) ? item.lat : "",
+          Lon: Number.isFinite(item.lon) ? item.lon : "",
           Date: item.date ? new Date(item.date).toLocaleString() : ""
         }));
         if (type === "xlsx") {
@@ -542,76 +578,6 @@ function initCordifyApp() {
       };
       window.clearCordifyHistory = clearHistory;
     })();
-    function parseDmsString(dmsStr) {
-      if (!dmsStr) {
-        return null;
-      }
-      dmsStr = dmsStr.trim().replace(/[′’‘`´]/g, "'").replace(/[″“”]/g, '"').replace(/\u00B0/g, "°").replace(/,/g, ".").toUpperCase().replace(/\s+/g, " ");
-      const leadDir = (dmsStr.match(/^[NSWE]/) || [ null ])[0];
-      const tailDir = (dmsStr.match(/[NSWE]$/) || [ null ])[0];
-      if (leadDir && tailDir && leadDir !== tailDir) {
-        return null;
-      }
-      let dir = tailDir || leadDir || null;
-      if (leadDir) {
-        dmsStr = dmsStr.slice(1).trim();
-      }
-      if (tailDir) {
-        dmsStr = dmsStr.slice(0, -1).trim();
-      }
-      // Accepts 12°34'56.7", 12 34 56.7, 12°34', 12° and 12.5. (?![\d.]) stops a
-      // number from being split into two (e.g. "1234" is never read as 12° 34').
-      const m = dmsStr.match(/^([+-]?\d+(?:\.\d+)?)(?![\d.])\s*°?(?:\s*(\d+(?:\.\d+)?)(?![\d.])\s*'?)?(?:\s*(\d+(?:\.\d+)?)(?![\d.])\s*"?)?$/);
-      if (!m) {
-        return null;
-      }
-      // Whole minutes/seconds have at most two digits, degrees at most three:
-      // "26°43'034" is not 34 seconds, so it is rejected rather than misread.
-      const whole = t => t ? t.replace(/^[+-]/, "").split(".")[0].length : 0;
-      if (whole(m[1]) > 3 || whole(m[2]) > 2 || whole(m[3]) > 2) {
-        return null;
-      }
-      const negative = m[1].startsWith("-");
-      let deg = Math.abs(parseFloat(m[1]));
-      let min = m[2] !== void 0 ? parseFloat(m[2]) : 0;
-      let sec = m[3] !== void 0 ? parseFloat(m[3]) : 0;
-      if ([ deg, min, sec ].some(Number.isNaN)) {
-        return null;
-      }
-      if (min < 0 || min >= 60 || sec < 0 || sec >= 60) {
-        return null;
-      }
-      let dd = deg + min / 60 + sec / 3600;
-      if (negative || dir === "S" || dir === "W") {
-        dd = -dd;
-      }
-      return dd;
-    }
-    function ddToDms(dd, latlon, secDigits = 3) {
-      if (!Number.isFinite(dd)) {
-        return null;
-      }
-      // Round once, in units of (1 / 10^secDigits) seconds, so 59.9996" can never
-      // show as 60" - it carries into the minutes (and degrees) instead.
-      const factor = Math.pow(10, secDigits);
-      const units = Math.round(Math.abs(dd) * 3600 * factor);
-      const negative = dd < 0 && units > 0;
-      const dir = latlon === "lat" ? negative ? "S" : "N" : negative ? "W" : "E";
-      const deg = Math.floor(units / (3600 * factor));
-      const min = Math.floor((units - deg * 3600 * factor) / (60 * factor));
-      const sec = (units - deg * 3600 * factor - min * 60 * factor) / factor;
-      let secStr = sec.toFixed(secDigits);
-      if (secStr.includes(".")) {
-        secStr = secStr.replace(/\.?0+$/, "");
-      }
-      return `${deg}° ${min}' ${secStr}" ${dir}`;
-    }
-    function inLatRange(v) {
-      return v >= -90 && v <= 90;
-    }
-    function inLonRange(v) {
-      return v >= -180 && v <= 180;
-    }
     function showErr(id, msg) {
       const el = document.getElementById(id);
       if (el) {
@@ -624,72 +590,6 @@ function initCordifyApp() {
     }
     function fieldValue(id) {
       return (document.getElementById(id)?.value || "").trim();
-    }
-    // One coordinate in any accepted form; rejects E/W on a latitude and N/S on a longitude.
-    function parseCoord(str, kind) {
-      const v = parseDmsString(str);
-      if (v === null) {
-        return null;
-      }
-      const letters = String(str).toUpperCase().match(/[NSEW]/g) || [];
-      if (kind === "lat" && letters.some(c => c === "E" || c === "W")) {
-        return null;
-      }
-      if (kind === "lon" && letters.some(c => c === "N" || c === "S")) {
-        return null;
-      }
-      return (kind === "lat" ? inLatRange(v) : inLonRange(v)) ? v : null;
-    }
-    function parseDecimal(str) {
-      const t = String(str ?? "").trim().replace(",", ".");
-      return /^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(t) ? parseFloat(t) : null;
-    }
-    // Split "lat, lon" text into its two parts. Accepts "12.58, 77.59",
-    // "12°34'56"N 77°35'12"E", "N 12 34 56 E 77 35 12", "12 34 56 77 35 12".
-    // With N/S/E/W letters the order can be either way round.
-    function splitPair(str) {
-      const s = String(str ?? "").trim().replace(/[′’‘`´]/g, "'").replace(/[″“”]/g, '"').replace(/\s+/g, " ");
-      if (!s) {
-        return null;
-      }
-      const up = s.toUpperCase();
-      const letters = [ ...up.matchAll(/[NSEW]/g) ];
-      const clean = t => t.replace(/^[,;\s]+|[,;\s]+$/g, "");
-      if (letters.length === 2) {
-        let i;
-        if (/[NSEW]$/.test(up)) {
-          i = letters[0].index + 1;
-        } else if (/^[NSEW]/.test(up)) {
-          i = letters[1].index;
-        } else {
-          return null;
-        }
-        const a = clean(s.slice(0, i)), b = clean(s.slice(i));
-        const isLat = t => /[NS]/i.test(t);
-        if (isLat(a) && !isLat(b)) {
-          return [ a, b ];
-        }
-        if (isLat(b) && !isLat(a)) {
-          return [ b, a ];
-        }
-        return null;
-      }
-      if (letters.length) {
-        return null;
-      }
-      let parts = s.split(/\s*;\s*/);
-      if (parts.length !== 2) {
-        parts = s.split(/\s*,\s+/);
-      }
-      if (parts.length !== 2 && (s.match(/,/g) || []).length === 1) {
-        parts = s.split(",");
-      }
-      if (parts.length !== 2) {
-        const tok = s.split(" ");
-        parts = tok.length % 2 === 0 && tok.length <= 6 ? [ tok.slice(0, tok.length / 2).join(" "), tok.slice(tok.length / 2).join(" ") ] : [];
-      }
-      parts = parts.map(clean);
-      return parts.length === 2 && parts[0] && parts[1] ? parts : null;
     }
     // A function (not a const) so the startup code above can use it before this line runs.
     function boxIds() {
@@ -723,7 +623,7 @@ function initCordifyApp() {
       if (v === null) {
         return;
       }
-      const f = 1e4;
+      const f = 1e6;
       const units = Math.round(Math.abs(v) * 3600 * f);
       const deg = Math.floor(units / (3600 * f));
       const min = Math.floor((units - deg * 3600 * f) / (60 * f));
@@ -731,7 +631,7 @@ function initCordifyApp() {
       const neg = units > 0 && v < 0;
       d.value = String(deg);
       m.value = String(min);
-      sec.value = String(+s.toFixed(4));
+      sec.value = String(+s.toFixed(6));
       dir.value = kind === "lat" ? neg ? "S" : "N" : neg ? "W" : "E";
     }
     function setDmsMode(mode, remember = true) {
@@ -823,8 +723,10 @@ function initCordifyApp() {
       const ok = lat !== null && lon !== null;
       const out = document.getElementById("dd_result");
       if (out) {
-        out.value = ok ? `Latitude (Y): ${lat.toFixed(prec)}\nLongitude (X): ${lon.toFixed(prec)}` : "";
+        out.value = ok ? `Latitude (Y): ${Core.formatDDText(lat, prec)}\nLongitude (X): ${Core.formatDDText(lon, prec)}${gridLines(lat, lon)}` : "";
+        out.rows = Math.max(2, out.value.split("\n").length);
       }
+      lastPoint.dd = ok ? { lat, lon } : null;
       if (!fieldValue("dms_pair") || err) {
         setInvalid("dms_pair", false);
       }
@@ -835,9 +737,9 @@ function initCordifyApp() {
       saveResult({
         type: "DMS→DD",
         input: `Lat: ${latStr}\nLon: ${lonStr}`,
-        result: `Lat: ${lat.toFixed(prec)}\nLon: ${lon.toFixed(prec)}`,
+        result: `Lat: ${Core.formatDDText(lat, prec)}\nLon: ${Core.formatDDText(lon, prec)}`,
         date: Date.now(),
-        lat, lon
+        lat, lon, grid: gridOf(lat, lon)
       });
       return true;
     }
@@ -865,8 +767,10 @@ function initCordifyApp() {
       const dms_lon = ok ? ddToDms(lon, "lon", secDigits) : "";
       const out = document.getElementById("dms_result");
       if (out) {
-        out.value = ok ? `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}` : "";
+        out.value = ok ? `Latitude (Y): ${dms_lat}\nLongitude (X): ${dms_lon}${gridLines(lat, lon)}` : "";
+        out.rows = Math.max(2, out.value.split("\n").length);
       }
+      lastPoint.dms = ok ? { lat, lon } : null;
       if (!fieldValue("dd_pair") || err) {
         setInvalid("dd_pair", false);
       }
@@ -879,7 +783,7 @@ function initCordifyApp() {
         input: `Lat: ${lat}\nLon: ${lon}`,
         result: `Lat: ${dms_lat}\nLon: ${dms_lon}`,
         date: Date.now(),
-        lat, lon
+        lat, lon, grid: gridOf(lat, lon)
       });
       return true;
     }
@@ -964,7 +868,7 @@ function initCordifyApp() {
       try {
         _map = L.map(el, {
           attributionControl: true,
-          preferCanvas: false
+          preferCanvas: true   // dots are drawn on one canvas, so tens of thousands stay smooth
         }).setView([ 0, 0 ], 2);
         _mapLayerGroup = L.layerGroup().addTo(_map);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -1055,6 +959,13 @@ function initCordifyApp() {
       }
       return null;
     }
+    // Saved numbers when the record has them; older records only have text to read back.
+    function coordsOf(item) {
+      if (item && Number.isFinite(item.lat) && Number.isFinite(item.lon) && inLatRange(item.lat) && inLonRange(item.lon)) {
+        return [ item.lat, item.lon ];
+      }
+      return parseLatLngFromOutput(item ? item.result || item.output || "" : "");
+    }
     function showCurrentInMap(type) {
       const resultEl = document.getElementById(type === "dd" ? "dd_result" : "dms_result");
       if (!resultEl) {
@@ -1066,7 +977,8 @@ function initCordifyApp() {
         showFeedback("No coordinates to display. Please convert some coordinates first.", "error");
         return;
       }
-      const coords = parseLatLngFromOutput(resultValue);
+      const exact = lastPoint[type];
+      const coords = exact ? [ exact.lat, exact.lon ] : parseLatLngFromOutput(resultValue);
       if (!coords) {
         showFeedback("Could not parse coordinates from result", "error");
         return;
@@ -1117,8 +1029,7 @@ function initCordifyApp() {
         return;
       }
       mapTabBtn.click();
-      const s = rec.result || rec.output || "";
-      const coords = parseLatLngFromOutput(s);
+      const coords = coordsOf(rec);
       if (!coords) {
         showFeedback("Could not parse coordinates from history item", "error");
         return;
@@ -1137,58 +1048,66 @@ function initCordifyApp() {
       }, 200);
     }
     window.showHistoryItemOnMap = showHistoryItemOnMap;
+    // Many points at once, as dots on the map's canvas. Labels open on click.
+    function drawPoints(lats, lons, labels) {
+      clearMap();
+      if (!lats.length) {
+        return;
+      }
+      const group = L.featureGroup();
+      const bounds = L.latLngBounds();
+      const style = { radius: 5, weight: 1.5, color: "#0e5f5c", fillColor: "#5fb8ae", fillOpacity: .85 };
+      for (let i = 0; i < lats.length; i++) {
+        const dot = L.circleMarker([ lats[i], lons[i] ], style);
+        dot.cordifyLabel = labels ? labels[i] : "";
+        group.addLayer(dot);
+        bounds.extend([ lats[i], lons[i] ]);
+      }
+      group.on("click", e => {
+        const box = document.createElement("div");
+        box.style.whiteSpace = "pre-wrap";
+        const ll = e.layer.getLatLng();
+        box.textContent = (e.layer.cordifyLabel ? e.layer.cordifyLabel + "\n" : "") + Core.formatDDText(ll.lat, 8) + ", " + Core.formatDDText(ll.lng, 8);
+        L.popup().setLatLng(ll).setContent(box).openOn(_map);
+      });
+      group.addTo(_mapLayerGroup);
+      try {
+        _map.fitBounds(bounds, { padding: [ 20, 20 ], maxZoom: 17 });
+      } catch (e) {}
+    }
     function plotAllHistory() {
       if (!initMap()) {
         alert("Map initialization failed");
         return 0;
       }
-      clearMap();
-      const items = getHistory();
-      let count = 0;
-      const bounds = L.latLngBounds();
-      let needsFit = false;
-      const batch = [];
-      for (const it of items) {
-        const s = it.result || it.output || "";
-        const coords = parseLatLngFromOutput(s);
+      const lats = [], lons = [], labels = [];
+      for (const it of getHistory()) {
+        const coords = coordsOf(it);
         if (!coords) {
           continue;
         }
-        const [lat, lon] = coords;
-        if (!isFinite(lat) || !isFinite(lon)) {
-          continue;
-        }
-        batch.push({
-          latlng: [ lat, lon ],
-          label: `${it.type || ""} — ${it.input}`
-        });
-        bounds.extend([ lat, lon ]);
-        needsFit = true;
-        count++;
-        if (count > 5e3) {
-          alert("Too many points — plotting stopped at 5000.");
-          break;
-        }
+        lats.push(coords[0]);
+        lons.push(coords[1]);
+        labels.push(`${it.type || ""} — ${it.input}`);
       }
-      for (let i = 0; i < batch.length; i += 100) {
-        const chunk = batch.slice(i, i + 100);
-        setTimeout(() => {
-          chunk.forEach(({latlng: latlng, label: label}) => {
-            try {
-              showOnMap(latlng[0], latlng[1], label);
-            } catch (e) {}
-          });
-          if (needsFit && i >= batch.length - 100) {
-            try {
-              _map.fitBounds(bounds, {
-                padding: [ 20, 20 ]
-              });
-            } catch (e) {}
-          }
-        }, Math.floor(i / 100) * 50);
-      }
-      return count;
+      drawPoints(lats, lons, labels);
+      return lats.length;
     }
+    // Used by Batch convert: opens the Map tab and shows the points.
+    window.CordifyMap = {
+      plotPoints(lats, lons, labels, message) {
+        document.getElementById("tab-map")?.click();
+        setTimeout(() => {
+          if (!initMap()) {
+            showFeedback("Failed to load the map. Check your internet connection.", "error");
+            return;
+          }
+          _map.invalidateSize(true);
+          drawPoints(lats, lons, labels);
+          showFeedback(message || `Plotted ${lats.length} points`, "success");
+        }, 300);
+      }
+    };
     function downloadBlob(filename, blob) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1204,8 +1123,7 @@ function initCordifyApp() {
     function historyToGeoJSON(items, targetEpsg = "EPSG:4326") {
       const features = [];
       for (const it of items) {
-        const s = it.result || it.output || "";
-        const coords = parseLatLngFromOutput(s);
+        const coords = coordsOf(it);
         if (!coords) {
           continue;
         }
@@ -1259,8 +1177,7 @@ function initCordifyApp() {
       }
       const pls = [];
       for (const it of items) {
-        const s = it.result || it.output || "";
-        const coords = parseLatLngFromOutput(s);
+        const coords = coordsOf(it);
         if (!coords) {
           continue;
         }
