@@ -12,7 +12,7 @@
  *   exportGeo  write its converted rows as GeoJSON, KML, GPX or GeoPackage
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=1", "repair-engine.js?v=3", "batch-core.js?v=1", "geo-io.js?v=1");
+importScripts("core.js?v=2", "repair-engine.js?v=3", "batch-core.js?v=1", "geo-io.js?v=1");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads

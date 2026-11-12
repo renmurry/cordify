@@ -4,39 +4,77 @@
  * added as a row: Name/ID, all formats (DD, DMS, DDM), source, input, date/time and
  * remarks. The sheet is previewed live, kept on this device until you clear it, can
  * be downloaded as .xlsx, and an existing Excel file can be loaded to continue it.
+ *
+ * There can be several named sheets (one per project or document). The Scan tab adds
+ * the points it finds to a sheet, and "Export for GIS" writes every sheet out as
+ * KML, KMZ, GeoJSON, GPX, GeoPackage, CSV and Excel, one folder per sheet.
  */
 (function () {
   "use strict";
   const $ = id => document.getElementById(id);
   const R = () => window.CordifyRepair;
-  const KEY = "cordify_sheet_v1", ON_KEY = "cordify_sheet_on";
+  const KEY = "cordify_sheet_v1", ON_KEY = "cordify_sheet_on", BOOK_KEY = "cordify_sheets_v2";
   const PREVIEW = 100;
   const GRID_COLS = [ "Easting", "Northing", "Grid" ];   // only written when a grid system is chosen
   const G = () => window.CordifyGrid;
   const gridOn = () => !!(G() && G().active());
   const OWN = [ "Name", "Lat_DD", "Lon_DD", "Lat_DMS", "Lon_DMS", "Lat_DDM", "Lon_DDM", "Source", "Input", "Added", "Remarks" ];
 
-  let state = { rows: [], extraCols: [], fileName: "", nextId: 1 };
+  const blank = () => ({ rows: [], extraCols: [], fileName: "", nextId: 1 });
+  const shape = s => s && Array.isArray(s.rows) ? { rows: s.rows, extraCols: s.extraCols || [], fileName: s.fileName || "", nextId: s.nextId || s.rows.length + 1 } : null;
+
+  // The list of sheets, and the rows of the one being shown.
+  let book = { active: "s1", list: [ { id: "s1", name: "Points" } ] };
+  let state = blank();
   let on = false, lastDeleted = null, pendingFile = null;
   let useDb = false, touched = false;
 
   /* ---------- storage (this device only) ---------- */
 
-  // The sheet is kept in IndexedDB (db.js), which has room for thousands of rows.
+  // The first sheet keeps the storage name older versions used, so nothing has to be moved.
+  const keyOf = id => id === "s1" ? KEY : `cordify_sheet_${id}`;
+  const validBook = b => b && Array.isArray(b.list) && b.list.length && b.list.some(s => s.id === b.active);
+  const FULL = "This browser would not store the sheet (storage full or blocked). Download it now so nothing is lost.";
+
+  // IndexedDB (db.js) when it is there, which has room for thousands of rows; else localStorage.
+  const store = {
+    async get(key) {
+      if (useDb) return window.CordifyDB.get(key);
+      try {
+        return JSON.parse(localStorage.getItem(key) || "null");
+      } catch (e) {
+        return null;
+      }
+    },
+    async set(key, value) {
+      if (useDb) return window.CordifyDB.set(key, value);
+      localStorage.setItem(key, JSON.stringify(value));
+    },
+    async del(key) {
+      if (useDb) return window.CordifyDB.del("kv", key);
+      localStorage.removeItem(key);
+    }
+  };
+
   // A sheet saved by an older version in localStorage is moved across once.
   async function loadStored() {
     const DB = window.CordifyDB;
     if (!DB || !await DB.ready) return;
     try {
-      const s = await DB.get(KEY);
-      if (s && Array.isArray(s.rows)) {
+      const b = await DB.get(BOOK_KEY);
+      if (validBook(b)) book = b;
+      const s = shape(await DB.get(keyOf(book.active)));
+      if (s) {
         // Rows added in the moment before this finished are kept, after the stored ones.
         const added = touched ? state.rows : [];
-        state = { rows: s.rows.concat(added), extraCols: s.extraCols || [], fileName: s.fileName || "", nextId: s.nextId || s.rows.length + 1 };
-        added.forEach(r => { r.id = state.nextId++; });
+        state = s;
+        added.forEach(r => {
+          r.id = state.nextId++;
+          state.rows.push(r);
+        });
       }
       useDb = true;
-      if (state.rows.length) await DB.set(KEY, state);
+      if (state.rows.length) await DB.set(keyOf(book.active), state);
       try {
         localStorage.removeItem(KEY);
       } catch (e) {}
@@ -46,23 +84,17 @@
 
   function load() {
     try {
-      const s = JSON.parse(localStorage.getItem(KEY) || "null");
-      if (s && Array.isArray(s.rows)) state = { rows: s.rows, extraCols: s.extraCols || [], fileName: s.fileName || "", nextId: s.nextId || s.rows.length + 1 };
+      const b = JSON.parse(localStorage.getItem(BOOK_KEY) || "null");
+      if (validBook(b)) book = b;
+      state = shape(JSON.parse(localStorage.getItem(keyOf(book.active)) || "null")) || blank();
       on = localStorage.getItem(ON_KEY) === "1";
     } catch (e) {}
   }
   function persist() {
     touched = true;
-    if (useDb) {
-      window.CordifyDB.set(KEY, state).catch(() => note("This browser would not store the sheet (storage full or blocked). Download it now so nothing is lost.", "bad"));
-      return;
-    }
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch (e) {
-      note("This browser would not store the sheet (storage full or blocked). Download it now so nothing is lost.", "bad");
-    }
+    store.set(keyOf(book.active), state).catch(() => note(FULL, "bad"));
   }
+  const persistBook = () => store.set(BOOK_KEY, book).catch(() => {});
 
   /* ---------- formats ---------- */
 
@@ -121,6 +153,8 @@
     $("sheet-fields").hidden = !on;
     $("sheet-card").hidden = !on;
     if (!on) return;
+    $("sheet-pick").innerHTML = book.list.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+    $("sheet-pick").value = book.active;
     const n = state.rows.length;
     $("sheet-count").textContent = n ? `${n} point${n > 1 ? "s" : ""}` : "empty";
     $("sheet-download").disabled = !n;
@@ -312,6 +346,213 @@
     note(`Loaded ${parsed.rows.length} rows from sheet “${parsed.sheet}”` + (bad ? ` — ${bad} without a readable coordinate (kept; the original text is in the Input column)` : "") + ". New points will be added after them.", bad ? "warn" : "good");
   }
 
+  /* ---------- several sheets ---------- */
+
+  function uniqueName(name, skipId) {
+    const base = String(name).trim().slice(0, 60) || "Sheet";
+    let n = base, k = 2;
+    while (book.list.some(s => s.id !== skipId && s.name.toLowerCase() === n.toLowerCase())) n = `${base} ${k++}`;
+    return n;
+  }
+
+  async function switchTo(id) {
+    if (id === book.active || !book.list.some(s => s.id === id)) return;
+    book.active = id;
+    persistBook();
+    state = shape(await store.get(keyOf(id))) || blank();
+    lastDeleted = null;
+    pendingFile = null;
+    $("sheet-choice").hidden = true;
+    note("");
+    render();
+  }
+
+  // Makes a new empty sheet, shows it, and returns its id.
+  async function createSheet(name) {
+    const id = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    book.list.push({ id, name: uniqueName(name) });
+    book.active = id;
+    state = blank();
+    lastDeleted = null;
+    persistBook();
+    persist();
+    render();
+    return id;
+  }
+
+  async function deleteSheet() {
+    const cur = book.list.find(s => s.id === book.active);
+    if (book.list.length === 1) {
+      note("This is the only sheet. Use “Clear sheet” to empty it.", "warn");
+      return;
+    }
+    if (!confirm(`Delete the sheet “${cur.name}” and its ${state.rows.length} point${state.rows.length === 1 ? "" : "s"}? Download it first if you need it.`)) return;
+    await store.del(keyOf(cur.id)).catch(() => {});
+    book.list = book.list.filter(s => s.id !== cur.id);
+    book.active = "";
+    await switchTo(book.list[0].id);
+    note(`Sheet “${cur.name}” deleted.`);
+  }
+
+  // Used by the Scan tab. points: [ { name, lat, lon, input, source, remarks, extra } ]
+  async function addPoints(points, id) {
+    if (id) await switchTo(id);
+    for (const p of points) {
+      for (const k of Object.keys(p.extra || {})) if (!state.extraCols.includes(k)) state.extraCols.push(k);
+      state.rows.push({ id: state.nextId++, name: p.name || "", remarks: p.remarks || "", lat: p.lat, lon: p.lon, source: p.source || "", input: p.input || "", time: Date.now(), extra: p.extra || {} });
+    }
+    persist();
+    render();
+    return state.rows.length;
+  }
+
+  // Brings the sheet into view from another tab.
+  function show() {
+    on = true;
+    try {
+      localStorage.setItem(ON_KEY, "1");
+    } catch (e) {}
+    $("tab-convert").click();
+    render();
+    $("sheet-card").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /* ---------- export for GIS: every sheet, every format, in folders ---------- */
+
+  const safe = n => String(n).replace(/[\\/:*?"<>|]+/g, "_").trim() || "sheet";
+
+  // The sheet as a plain table: every column, every row.
+  function tableOf(st) {
+    const own = gridOn() ? OWN.slice(0, 7).concat(GRID_COLS, OWN.slice(7)) : OWN;
+    const head = own.concat(st.extraCols);
+    const rows = st.rows.map(r => {
+      const c = cells(r);
+      return { r, values: own.map(k => c[k]).concat(st.extraCols.map(k => r.extra && r.extra[k] !== undefined ? r.extra[k] : "")) };
+    });
+    return { head, rows };
+  }
+
+  // [ { path, data } ] for one sheet. Formats whose library is missing are left out and named in `skipped`.
+  async function sheetFiles(name, st, skipped) {
+    const IO = window.CordifyGeoIO, t = tableOf(st), base = safe(name), files = [];
+    const text = v => v instanceof Date ? stamp(v.getTime()) : v;
+    const pts = t.rows.filter(x => x.r.lat != null && x.r.lon != null);
+    const props = x => t.head.map((h, j) => [ h, text(x.values[j]) ]);
+    let kml = "";
+    for (const fmt of [ "kml", "geojson", "gpx" ]) {
+      const w = IO.textWriter(fmt, name);
+      const s = w.head + pts.map((x, i) => w.point(x.r.name || `Point ${i + 1}`, x.r.lat, x.r.lon, props(x))).join("") + w.tail;
+      files.push({ path: `${fmt}/${base}.${w.ext}`, data: s });
+      if (fmt === "kml") kml = s;
+    }
+    if (typeof JSZip !== "undefined") {
+      const z = new JSZip();
+      z.file("doc.kml", kml);
+      files.push({ path: `kmz/${base}.kmz`, data: await z.generateAsync({ type: "uint8array", compression: "DEFLATE" }) });
+    } else skipped.add("KMZ");
+    const cell = window.CordifyBatchCore.csvCell;
+    files.push({ path: `csv/${base}.csv`, data: "\uFEFF" + [ t.head ].concat(t.rows.map(x => x.values.map(text))).map(r => r.map(c => cell(c)).join(",")).join("\n") + "\n" });
+    if (typeof XLSX !== "undefined") {
+      const ws = XLSX.utils.aoa_to_sheet([ t.head ].concat(t.rows.map(x => x.values)), { cellDates: true, dateNF: "yyyy-mm-dd hh:mm" });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Points");
+      files.push({ path: `excel/${base}.xlsx`, data: new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" })) });
+    } else skipped.add("Excel");
+    try {
+      const pkg = IO.gpkg(await window.CordifyBatch.loadSql());
+      const tb = pkg.table(name, t.head.map(h => ({ name: h, type: IO.NUMERIC.test(h) ? "DOUBLE" : "TEXT" })));
+      pts.forEach(x => tb.point(x.r.lat, x.r.lon, x.values.map(text)));
+      files.push({ path: `geopackage/${base}.gpkg`, data: pkg.finish() });
+    } catch (e) {
+      skipped.add("GeoPackage");
+    }
+    if (st.extraCols.includes("Document")) {
+      const tally = new Map();
+      for (const r of st.rows) {
+        const k = `${r.extra && r.extra.Document || ""}\u0000${r.extra && r.extra.Page || ""}`;
+        tally.set(k, (tally.get(k) || 0) + 1);
+      }
+      files.push({ path: "sources.csv", data: "\uFEFFDocument,Page,Points\n" + [ ...tally ].map(([ k, n ]) => k.split("\u0000").map(c => cell(c)).concat(n).join(",")).join("\n") + "\n" });
+    }
+    files.push({ path: "README.txt", data: [
+      `Cordify export: ${name}`,
+      `Made ${stamp(Date.now())}. ${pts.length} point${pts.length === 1 ? "" : "s"}${t.rows.length > pts.length ? `, plus ${t.rows.length - pts.length} row(s) without a coordinate (in the CSV and Excel files only)` : ""}.`,
+      "All coordinates are WGS 84 latitude/longitude (EPSG:4326).",
+      "",
+      "geopackage/  one file for QGIS or ArcGIS, coordinate system included",
+      "geojson/     for QGIS, web maps and most GIS tools",
+      "kml/, kmz/   for Google Earth",
+      "gpx/         waypoints for GPS units and field apps",
+      "csv/, excel/ the full table, every column",
+      st.extraCols.includes("Document") ? "sources.csv  which document and page each point came from" : ""
+    ].filter((l, i, a) => l !== "" || a[i - 1] !== "").join("\r\n") + "\r\n" });
+    return files;
+  }
+
+  function saveBlob(name, blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, 300);
+  }
+
+  // One folder per sheet, one folder per format inside it. As a zip, or straight into a
+  // folder you pick (only some desktop browsers can do that).
+  async function exportAll(toFolder) {
+    let dir = null;
+    if (toFolder) {
+      try {
+        dir = await window.showDirectoryPicker({ mode: "readwrite" });
+      } catch (e) {
+        return;   // the picker was closed
+      }
+    }
+    if (typeof JSZip === "undefined" && !dir) {
+      note("The zip library did not load, so the export can't be bundled. Reload the page and try again.", "bad");
+      return;
+    }
+    note("Preparing the export…");
+    const all = [], skipped = new Set();
+    let sheets = 0;
+    try {
+      for (const s of book.list) {
+        const st = s.id === book.active ? state : shape(await store.get(keyOf(s.id))) || blank();
+        if (!st.rows.some(r => r.lat != null && r.lon != null)) continue;
+        sheets++;
+        (await sheetFiles(s.name, st, skipped)).forEach(f => all.push({ path: `${safe(s.name)}/${f.path}`, data: f.data }));
+      }
+      if (!all.length) {
+        note("There are no points to export yet.", "warn");
+        return;
+      }
+      const root = `Cordify export ${stamp(Date.now()).slice(0, 10)}`;
+      if (dir) {
+        const top = await dir.getDirectoryHandle(root, { create: true });
+        for (const f of all) {
+          const parts = f.path.split("/");
+          let d = top;
+          for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p, { create: true });
+          const w = await (await d.getFileHandle(parts[parts.length - 1], { create: true })).createWritable();
+          await w.write(f.data);
+          await w.close();
+        }
+      } else {
+        const zip = new JSZip();
+        all.forEach(f => zip.file(`${root}/${f.path}`, f.data));
+        saveBlob(`${root}.zip`, await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
+      }
+      note(`Exported ${sheets} sheet${sheets === 1 ? "" : "s"} (${all.length} files) ${dir ? `into the folder “${root}”` : `as “${root}.zip”`}.` + (skipped.size ? ` Left out: ${[ ...skipped ].join(", ")} (its library did not load).` : ""), skipped.size ? "warn" : "good");
+    } catch (e) {
+      note("The export could not be written. Try again.", "bad");
+    }
+  }
+
   /* ---------- wiring ---------- */
 
   function init() {
@@ -337,11 +578,28 @@
       $(lastCard === "dms" ? "btn-dms2dd" : "btn-dd2dms").click();
     }));
     $("sheet-download").addEventListener("click", download);
+    $("sheet-pick").addEventListener("change", e => switchTo(e.target.value));
+    $("sheet-new").addEventListener("click", () => {
+      const name = prompt("Name for the new sheet:", "");
+      if (name && name.trim()) createSheet(name.trim());
+    });
+    $("sheet-rename").addEventListener("click", () => {
+      const cur = book.list.find(s => s.id === book.active);
+      const name = prompt("New name for this sheet:", cur.name);
+      if (!name || !name.trim()) return;
+      cur.name = uniqueName(name.trim(), cur.id);
+      persistBook();
+      render();
+    });
+    $("sheet-delete").addEventListener("click", deleteSheet);
+    $("sheet-export").addEventListener("click", () => exportAll(false));
+    $("sheet-export-folder").hidden = typeof window.showDirectoryPicker !== "function";
+    $("sheet-export-folder").addEventListener("click", () => exportAll(true));
     $("sheet-load").addEventListener("change", onLoadFile);
     $("sheet-clear").addEventListener("click", () => {
       if (!state.rows.length) return;
       if (!confirm(`Clear all ${state.rows.length} points from the sheet? Download it first if you need it.`)) return;
-      state = { rows: [], extraCols: [], fileName: "", nextId: 1 };
+      state = blank();
       persist();
       render();
       note("Sheet cleared.");
@@ -371,7 +629,7 @@
     render();
   }
 
-  window.CordifySheet = { onSave };
+  window.CordifySheet = { onSave, addPoints, create: createSheet, show, list: () => ({ active: book.active, list: book.list.map(s => ({ ...s })) }) };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

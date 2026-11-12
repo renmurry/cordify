@@ -430,6 +430,17 @@ tr.batch-nocols td { background: var(--st-choose-bg); }
 .sheet-fields .field { margin: 0; flex: 1 1 160px; }
 .sheet-fields .sheet-remarks-field { flex: 2 1 220px; }
 .sheet-card { margin-bottom: 16px; }
+.sheet-book { margin-bottom: 10px; }
+.sheet-book select { max-width: 220px; }
+
+/* ---------- Scan tab ---------- */
+.scan-files { margin: 10px 0 0; padding-left: 18px; font-size: .875rem; }
+.scan-files:empty { display: none; }
+.scan-table td { vertical-align: top; }
+.scan-table input[type="text"] { min-width: 150px; }
+.scan-src img { display: block; width: 100%; min-width: 180px; max-width: 340px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.scan-src .hint, .scan-dd { display: block; margin-top: 4px; }
+.scan-dd { font-variant-numeric: tabular-nums; }
 .sheet-choice {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
   margin-bottom: 10px; padding: 10px 12px; border-radius: 8px;

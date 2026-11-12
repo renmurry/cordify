@@ -25,6 +25,11 @@ expect("26°30' is exactly 26.5", C.parseDmsString("26°30'") === 26.5);
 expect("minus sign with zero degrees keeps its sign", C.parseDmsString("-0° 30'") === -0.5);
 expect("true minus sign (−) is read", C.parseDmsString("−0.5") === -0.5 && C.parseDecimal("−12.25") === -12.25);
 expect("comma as decimal point", C.parseDmsString("12,5") === 12.5 && C.parseDecimal("12,5") === 12.5);
+let exact = true;
+for (const s of [ "26.933417", "95.044528", "0.1", "179.999999999", "-33.868800001" ]) {
+  if (C.parseDmsString(s) !== parseFloat(s) || C.parseCoord(s, "lon") !== parseFloat(s)) exact = false;
+}
+expect("a plain decimal is read exactly as written", exact);
 expect("zero is never negative zero", Object.is(C.parseDmsString("0° 0' 0\" S"), 0));
 expect("60 minutes rejected", C.parseDmsString("12°60'") === null);
 expect("60 seconds rejected", C.parseDmsString("12°30'60\"") === null);

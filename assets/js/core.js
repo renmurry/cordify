@@ -76,8 +76,9 @@
     if (min < 0 || min >= 60 || sec < 0 || sec >= 60) {
       return null;
     }
-    // One division, so 26°30' is exactly 26.5 and seconds are not rounded twice.
-    let dd = (deg * 3600 + min * 60 + sec) / 3600;
+    // A plain number is used exactly as written. With minutes or seconds: one division,
+    // so 26°30' is exactly 26.5 and seconds are not rounded twice.
+    let dd = m[2] === undefined && m[3] === undefined ? deg : (deg * 3600 + min * 60 + sec) / 3600;
     if (negative || dir === "S" || dir === "W") {
       dd = -dd;
     }
