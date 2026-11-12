@@ -4,20 +4,24 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=9">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=12">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0e5f5c">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <script>
+    // The saved look (see assets/js/looks.js), applied before anything is drawn so the page never flashes.
+    try { var l = localStorage.getItem("cordify_look"); if (l === "frost" || l === "neon") document.documentElement.dataset.look = l; } catch (e) {}
+  </script>
 </head>
 <body>
 <div class="app">
 
   <header class="app-header">
     <div class="brand">
-      <span class="brand-name">Cordify</span>
+      <button type="button" class="brand-name" id="brand-look">Cordify</button>
       <span class="brand-sub">DMS ⇄ decimal degrees</span>
     </div>
     <nav class="tabs" aria-label="Sections">
@@ -53,6 +57,28 @@
           </label>
         </div>
       </section>
+      <section class="card sheet-bar grid-bar" aria-label="Grid coordinates">
+        <label class="field">
+          <span class="field-label">Also give Easting / Northing <button type="button" class="help" aria-label="About Easting and Northing" data-tip="Adds grid coordinates in metres to every result, to saved history, to the sheet and to Batch convert. Input is always read as WGS 84 latitude/longitude.">?</button></span>
+          <select id="grid-system">
+            <option value="off">Off</option>
+            <option value="utm">UTM (zone chosen automatically)</option>
+            <option value="epsg:3857">Web Mercator (EPSG:3857)</option>
+            <option value="epsg:27700">British National Grid (EPSG:27700)</option>
+            <option value="epsg">Another EPSG code…</option>
+            <option value="custom">Custom definition…</option>
+          </select>
+        </label>
+        <label class="field" id="grid-code-wrap" hidden>
+          <span class="field-label">EPSG code</span>
+          <input id="grid-code" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 32646">
+        </label>
+        <label class="field grid-def-field" id="grid-def-wrap" hidden>
+          <span class="field-label">Definition (proj4 or WKT text)</span>
+          <input id="grid-def" type="text" autocomplete="off" spellcheck="false" placeholder="+proj=tmerc +lat_0=… +towgs84=…">
+        </label>
+        <p class="hint grid-note" id="grid-note" role="status"></p>
+      </section>
       <div class="tools">
 
         <section class="card tool" aria-labelledby="dms-title">
@@ -60,6 +86,9 @@
             <h2 id="dms-title">DMS → DD</h2>
             <label class="precision">Decimals
               <select id="precision-dd">
+                <option value="9">9</option>
+                <option value="8">8</option>
+                <option value="7">7</option>
                 <option value="6" selected>6</option>
                 <option value="5">5</option>
                 <option value="4">4</option>
@@ -126,6 +155,8 @@
             <h2 id="dd-title">DD → DMS</h2>
             <label class="precision">Seconds decimals
               <select id="precision-dms">
+                <option value="5">5</option>
+                <option value="4">4</option>
                 <option value="3" selected>3</option>
                 <option value="2">2</option>
                 <option value="1">1</option>
@@ -194,12 +225,12 @@
 
       <section class="card batch" aria-labelledby="batch-title">
         <div class="card-head">
-          <h2 id="batch-title">Batch convert <button type="button" class="help" aria-label="About batch convert" data-tip="Converts a whole spreadsheet. Reads decimal degrees, DMS and degrees + decimal minutes — in one column (26.92, 95.03) or in separate Lat and Lon columns — and adds the formats you pick as new columns. Values that look mistyped are listed, not guessed.">?</button></h2>
-          <span class="hint">Excel or CSV: upload, check the columns, convert, download.</span>
+          <h2 id="batch-title">Batch convert <button type="button" class="help" aria-label="About batch convert" data-tip="Converts a whole spreadsheet. CSV files of any size work: large ones are read from disk a piece at a time, in the background. Reads decimal degrees, DMS and degrees + decimal minutes — in one column (26.92, 95.03) or in separate Lat and Lon columns — and adds the formats you pick as new columns. Values that look mistyped are listed, not guessed.">?</button></h2>
+          <span class="hint">Excel, CSV, KML, KMZ, GeoJSON or GPX: upload, check the columns, convert, download.</span>
         </div>
 
         <div class="batch-controls">
-          <input type="file" id="batch-file" accept=".xlsx,.xls,.csv" />
+          <input type="file" id="batch-file" accept=".xlsx,.xls,.csv,.kml,.kmz,.geojson,.json,.gpx" />
           <label class="inline" id="batch-sheet-wrap" hidden>Sheet
             <select id="batch-sheet"></select>
           </label>
@@ -217,17 +248,32 @@
         <div class="rp-formats batch-formats" id="batch-out" role="group" aria-label="Output formats" hidden>
           <span class="field-label">Convert to</span>
           <label class="rp-fmt" data-tip="Decimal degrees, e.g. 26.189922 — what most GIS software and Google Maps use."><input type="checkbox" id="batch-fmt-dd" checked> Decimal degrees
-            <select id="batch-prec-dd" aria-label="Decimal places"><option value="6" selected>6 dp</option><option value="5">5 dp</option><option value="7">7 dp</option><option value="4">4 dp</option><option value="3">3 dp</option></select></label>
+            <select id="batch-prec-dd" aria-label="Decimal places"><option value="6" selected>6 dp</option><option value="5">5 dp</option><option value="7">7 dp</option><option value="8">8 dp</option><option value="9">9 dp</option><option value="4">4 dp</option><option value="3">3 dp</option></select></label>
           <label class="rp-fmt" data-tip="Degrees, minutes, seconds, e.g. 26° 11' 23.72&quot; N — common on maps and survey sheets."><input type="checkbox" id="batch-fmt-dms" checked> DMS
-            <select id="batch-prec-dms" aria-label="Seconds decimal places"><option value="2" selected>0.01″</option><option value="1">0.1″</option><option value="3">0.001″</option><option value="0">1″</option></select></label>
+            <select id="batch-prec-dms" aria-label="Seconds decimal places"><option value="2" selected>0.01″</option><option value="1">0.1″</option><option value="3">0.001″</option><option value="4">0.0001″</option><option value="5">0.00001″</option><option value="0">1″</option></select></label>
           <label class="rp-fmt" data-tip="Degrees + decimal minutes, e.g. 26° 11.3953' N — used by many GPS units and drones."><input type="checkbox" id="batch-fmt-ddm"> Degrees + decimal minutes
-            <select id="batch-prec-ddm" aria-label="Minutes decimal places"><option value="4" selected>0.0001′</option><option value="3">0.001′</option><option value="5">0.00001′</option></select></label>
+            <select id="batch-prec-ddm" aria-label="Minutes decimal places"><option value="4" selected>0.0001′</option><option value="3">0.001′</option><option value="5">0.00001′</option><option value="6">0.000001′</option><option value="7">0.0000001′</option></select></label>
+          <label class="rp-fmt" data-tip="Grid coordinates in metres, in the system chosen under “Also give Easting / Northing” at the top of this tab."><input type="checkbox" id="batch-fmt-grid" checked> Easting / Northing <span class="hint" id="batch-grid-label"></span></label>
         </div>
 
         <div class="actions" id="batch-actions" hidden>
           <button class="btn-primary" id="batch-run" type="button">Convert all rows</button>
           <button id="batch-download-xlsx" type="button" disabled data-tip="The same workbook with the new columns added to each converted sheet. Other sheets are kept as they are.">Download XLSX</button>
           <button id="batch-download-csv" type="button" disabled data-tip="One CSV for one sheet, or a zip with one CSV per sheet. Opens correctly in Excel, including the ° symbol.">Download CSV</button>
+          <button id="batch-map" type="button" class="map-btn" disabled data-tip="Shows the converted points on the Map tab. Very large files are thinned evenly to 50,000 points.">Show on map</button>
+        </div>
+        <div class="actions batch-gis" id="batch-gis" hidden>
+          <span class="field-label">For GIS software</span>
+          <button type="button" data-fmt="gpkg" disabled data-tip="GeoPackage: one file that QGIS and ArcGIS open directly, with the coordinate system built in.">GeoPackage</button>
+          <button type="button" data-fmt="geojson" disabled data-tip="GeoJSON: opens in QGIS, web maps and most GIS tools.">GeoJSON</button>
+          <button type="button" data-fmt="kml" disabled data-tip="KML: for Google Earth.">KML</button>
+          <button type="button" data-fmt="gpx" disabled data-tip="GPX waypoints: for handheld GPS units and field apps.">GPX</button>
+          <span class="hint">Only rows that converted are included, as WGS 84 points.</span>
+        </div>
+        <div class="batch-progress" id="batch-progress-wrap" hidden>
+          <progress id="batch-progress" max="1" value="0" aria-label="Progress"></progress>
+          <span class="hint" id="batch-progress-text" role="status"></span>
+          <button type="button" class="btn-quiet" id="batch-cancel">Cancel</button>
         </div>
         <p class="hint batch-status" id="batch-status" role="status"></p>
 
@@ -236,11 +282,16 @@
             <span class="hint" id="batch-preview-label"></span>
             <label class="inline"><input type="checkbox" id="batch-only-problems"> Show only rows that couldn't be read</label>
           </div>
-          <div class="table-wrap">
-            <table class="table batch-table" id="batch-preview">
-              <thead><tr id="batch-head"></tr></thead>
-              <tbody id="batch-body"></tbody>
-            </table>
+          <div class="vt" id="batch-vt" tabindex="0" aria-label="Converted rows">
+            <div class="vt-view" id="batch-vt-view">
+              <div class="table-wrap">
+                <table class="table batch-table" id="batch-preview">
+                  <thead><tr id="batch-head"></tr></thead>
+                  <tbody id="batch-body"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="batch-vt-spacer"></div>
           </div>
         </div>
       </section>
@@ -374,11 +425,11 @@
         <div class="rp-formats" role="group" aria-label="Output formats">
           <span class="field-label">Add columns as</span>
           <label class="rp-fmt" data-tip="Decimal degrees, e.g. 26.189922 — what most GIS software and Google Maps use."><input type="checkbox" id="rp-fmt-dd" checked> Decimal degrees
-            <select id="rp-prec-dd" aria-label="Decimal places"><option value="6" selected>6 dp</option><option value="5">5 dp</option><option value="7">7 dp</option><option value="4">4 dp</option></select></label>
+            <select id="rp-prec-dd" aria-label="Decimal places"><option value="6" selected>6 dp</option><option value="5">5 dp</option><option value="7">7 dp</option><option value="8">8 dp</option><option value="9">9 dp</option><option value="4">4 dp</option></select></label>
           <label class="rp-fmt" data-tip="Degrees, minutes, seconds, e.g. 26° 11' 23.72&quot; N."><input type="checkbox" id="rp-fmt-dms"> DMS
-            <select id="rp-prec-dms" aria-label="Seconds decimal places"><option value="2" selected>0.01″</option><option value="1">0.1″</option><option value="3">0.001″</option><option value="0">1″</option></select></label>
+            <select id="rp-prec-dms" aria-label="Seconds decimal places"><option value="2" selected>0.01″</option><option value="1">0.1″</option><option value="3">0.001″</option><option value="4">0.0001″</option><option value="5">0.00001″</option><option value="0">1″</option></select></label>
           <label class="rp-fmt" data-tip="Degrees + decimal minutes, e.g. 26° 11.3953' N — used by many GPS units and drones."><input type="checkbox" id="rp-fmt-ddm"> Degrees + decimal minutes
-            <select id="rp-prec-ddm" aria-label="Minutes decimal places"><option value="4" selected>0.0001′</option><option value="3">0.001′</option><option value="5">0.00001′</option></select></label>
+            <select id="rp-prec-ddm" aria-label="Minutes decimal places"><option value="4" selected>0.0001′</option><option value="3">0.001′</option><option value="5">0.00001′</option><option value="6">0.000001′</option><option value="7">0.0000001′</option></select></label>
           <span class="hint">e.g. 26.189922 · 26° 11' 23.72" N · 26° 11.3953' N</span>
         </div>
         <div class="actions">
@@ -408,19 +459,26 @@
   </main>
 </div>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/proj4@2.8.1/dist/proj4.js" integrity="sha512-aIqYhZWmKBmfxEcdqUuqln8wMYFvGUKw4sqfjNcCoEQgx2iZF26+ikx0kz35uHjwpejMeHCcfHUpCtkohi2raw==" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha256-rMfkFFWoB2W1/Zx+4bgHim0WC7vKRVrq6FTeZclH1Z4=" crossorigin="anonymous"></script>
+  <!-- Libraries are kept in assets/vendor so the app works with no internet (see assets/vendor/README.md) -->
+  <link rel="stylesheet" href="./assets/vendor/leaflet/leaflet.css" />
+  <script src="./assets/vendor/leaflet/leaflet.js"></script>
+  <script src="./assets/vendor/proj4.js"></script>
+  <script src="./assets/vendor/jszip.min.js"></script>
   
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="./assets/js/historyStore.js"></script>
-  <script src="./assets/js/app.js?v=15"></script>
-  <script src="./assets/js/repair-engine.js?v=2"></script>
+  <script src="./assets/vendor/xlsx.full.min.js"></script>
+  <script src="./assets/js/core.js?v=1"></script>
+  <script src="./assets/js/grid.js?v=2"></script>
+  <script src="./assets/js/db.js?v=1"></script>
+  <script src="./assets/js/historyStore.js?v=2"></script>
+  <script src="./assets/js/app.js?v=17"></script>
+  <script src="./assets/js/repair-engine.js?v=3"></script>
   <script src="./assets/js/repair-ui.js?v=4"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
-  <script src="./assets/js/batch.js?v=2"></script>
-  <script src="./assets/js/sheet.js?v=1"></script>
+  <script src="./assets/js/looks.js?v=1"></script>
+  <script src="./assets/js/batch-core.js?v=1"></script>
+  <script src="./assets/js/geo-io.js?v=1"></script>
+  <script src="./assets/js/batch.js?v=6"></script>
+  <script src="./assets/js/sheet.js?v=3"></script>
   <script src="./assets/js/tips.js?v=1"></script>
 
 <script>

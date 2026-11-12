@@ -11,12 +11,38 @@
   const R = () => window.CordifyRepair;
   const KEY = "cordify_sheet_v1", ON_KEY = "cordify_sheet_on";
   const PREVIEW = 100;
+  const GRID_COLS = [ "Easting", "Northing", "Grid" ];   // only written when a grid system is chosen
+  const G = () => window.CordifyGrid;
+  const gridOn = () => !!(G() && G().active());
   const OWN = [ "Name", "Lat_DD", "Lon_DD", "Lat_DMS", "Lon_DMS", "Lat_DDM", "Lon_DDM", "Source", "Input", "Added", "Remarks" ];
 
   let state = { rows: [], extraCols: [], fileName: "", nextId: 1 };
   let on = false, lastDeleted = null, pendingFile = null;
+  let useDb = false, touched = false;
 
   /* ---------- storage (this device only) ---------- */
+
+  // The sheet is kept in IndexedDB (db.js), which has room for thousands of rows.
+  // A sheet saved by an older version in localStorage is moved across once.
+  async function loadStored() {
+    const DB = window.CordifyDB;
+    if (!DB || !await DB.ready) return;
+    try {
+      const s = await DB.get(KEY);
+      if (s && Array.isArray(s.rows)) {
+        // Rows added in the moment before this finished are kept, after the stored ones.
+        const added = touched ? state.rows : [];
+        state = { rows: s.rows.concat(added), extraCols: s.extraCols || [], fileName: s.fileName || "", nextId: s.nextId || s.rows.length + 1 };
+        added.forEach(r => { r.id = state.nextId++; });
+      }
+      useDb = true;
+      if (state.rows.length) await DB.set(KEY, state);
+      try {
+        localStorage.removeItem(KEY);
+      } catch (e) {}
+      render();
+    } catch (e) {}
+  }
 
   function load() {
     try {
@@ -26,6 +52,11 @@
     } catch (e) {}
   }
   function persist() {
+    touched = true;
+    if (useDb) {
+      window.CordifyDB.set(KEY, state).catch(() => note("This browser would not store the sheet (storage full or blocked). Download it now so nothing is lost.", "bad"));
+      return;
+    }
     try {
       localStorage.setItem(KEY, JSON.stringify(state));
     } catch (e) {
@@ -40,13 +71,14 @@
     const has = r.lat != null && r.lon != null;
     return {
       Name: r.name || "",
-      // 7 decimals (about 1 cm) so DMS to 0.001" and DDM to 0.0001' survive a save and reload.
-      Lat_DD: has ? R().formatDD(r.lat, 7) : "",
-      Lon_DD: has ? R().formatDD(r.lon, 7) : "",
+      // 9 decimals (about 0.1 mm) so survey-grade values survive a save and reload.
+      Lat_DD: has ? R().formatDD(r.lat, 9) : "",
+      Lon_DD: has ? R().formatDD(r.lon, 9) : "",
       Lat_DMS: has ? R().formatDMS(r.lat, "lat", secDigits()) : "",
       Lon_DMS: has ? R().formatDMS(r.lon, "lon", secDigits()) : "",
       Lat_DDM: has ? R().formatDDM(r.lat, "lat", 4) : "",
       Lon_DDM: has ? R().formatDDM(r.lon, "lon", 4) : "",
+      ...(gridOn() ? Object.fromEntries(G().cells(has ? r.lat : null, has ? r.lon : null)) : {}),
       Source: r.source || "",
       Input: r.input || "",
       Added: r.time ? new Date(r.time) : "",
@@ -129,11 +161,12 @@
 
   function download() {
     if (!state.rows.length || typeof XLSX === "undefined") return;
-    const head = OWN.concat(state.extraCols);
+    const own = gridOn() ? OWN.slice(0, 7).concat(GRID_COLS, OWN.slice(7)) : OWN;
+    const head = own.concat(state.extraCols);
     const aoa = [ head ];
     for (const r of state.rows) {
       const c = cells(r);
-      aoa.push(OWN.map(k => c[k]).concat(state.extraCols.map(k => r.extra && r.extra[k] !== undefined ? r.extra[k] : "")));
+      aoa.push(own.map(k => c[k]).concat(state.extraCols.map(k => r.extra && r.extra[k] !== undefined ? r.extra[k] : "")));
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: "yyyy-mm-dd hh:mm" });
     ws["!cols"] = head.map(h => ({ wch: h === "Input" || h === "Remarks" ? 30 : h.includes("DMS") || h.includes("DDM") ? 20 : h === "Added" ? 17 : 14 }));
@@ -220,7 +253,9 @@
       return j;
     };
     // Columns we write ourselves are recognised; everything else is kept as an extra column.
-    OWN.forEach(k => {
+    // Easting/Northing are ours only in a file Cordify wrote (it has Lat_DD and Lon_DD);
+    // in anyone else's file they are kept like any other column.
+    (latDD >= 0 && lonDD >= 0 ? OWN.concat(GRID_COLS) : OWN).forEach(k => {
       const j = head.indexOf(k);
       if (j >= 0) used.add(j);
     });
@@ -282,6 +317,7 @@
   function init() {
     if (!$("sheet-toggle")) return;
     load();
+    loadStored();
     $("sheet-toggle").addEventListener("change", e => {
       on = e.target.checked;
       try {
