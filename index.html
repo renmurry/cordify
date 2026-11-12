@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=12">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=13">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -29,8 +29,9 @@
       <button id="tab-map" class="tab-btn" type="button">Map</button>
       <button id="tab-history" class="tab-btn" type="button">History</button>
       <button id="tab-repair" class="tab-btn" type="button" hidden>Repair</button>
+      <button id="tab-scan" class="tab-btn" type="button" hidden>Scan</button>
     </nav>
-    <label class="adv-toggle" data-tip="Advanced mode adds the Repair tab: fix badly typed coordinates in a spreadsheet, using a boundary file to check where points can be.">
+    <label class="adv-toggle" data-tip="Advanced mode adds two tabs. Repair: fix badly typed coordinates in a spreadsheet, using a boundary file to check where points can be. Scan: find the coordinates written in images, PDFs and scanned documents.">
       <input type="checkbox" id="advanced-mode">
       <span class="adv-track" aria-hidden="true"></span>
       Advanced
@@ -205,6 +206,14 @@
             <button type="button" class="btn-quiet" id="sheet-clear" disabled>Clear sheet</button>
           </div>
         </div>
+        <div class="actions sheet-book">
+          <label class="inline">Sheet <select id="sheet-pick" aria-label="Which sheet is shown"></select></label>
+          <button type="button" id="sheet-new" data-tip="Start another sheet, for example one per project or document. Each keeps its own points.">New sheet</button>
+          <button type="button" class="btn-quiet" id="sheet-rename">Rename</button>
+          <button type="button" class="btn-quiet" id="sheet-delete">Delete</button>
+          <button type="button" id="sheet-export" data-tip="Every sheet, in every format, sorted into folders: GeoPackage, GeoJSON, KML, KMZ, GPX, CSV and Excel. One zip file.">Export for GIS (zip)</button>
+          <button type="button" id="sheet-export-folder" hidden data-tip="The same export, written straight into a folder you choose instead of a zip.">Save to a folder…</button>
+        </div>
         <div id="sheet-choice" class="sheet-choice" hidden>
           <span id="sheet-choice-text"></span>
           <span class="actions">
@@ -321,6 +330,52 @@
             </thead>
             <tbody></tbody>
           </table>
+        </div>
+      </section>
+    </div>
+
+    <div id="scan-tab" class="page" style="display:none;">
+      <div class="repair-intro">
+        <h2>Scan documents</h2>
+        <p class="hint">Find the coordinates written in images, PDFs and scanned pages. Everything is read on this device; nothing is uploaded. You check each point against a picture of where it was found before it goes into a sheet.</p>
+      </div>
+
+      <section class="card rp-step" aria-labelledby="scan-s1">
+        <div class="card-head"><h2 id="scan-s1">1. Add documents <button type="button" class="help" aria-label="About scanning" data-tip="PDFs that contain real text are read exactly. Scanned PDFs and photos are read with OCR, which makes mistakes: printed and typed text reads well, handwriting usually does not. The first scan loads the reader (about 8 MB), then it works offline.">?</button></h2>
+          <span class="hint">Images (JPG, PNG…), PDF, or text files. Several at once is fine.</span></div>
+        <div class="batch-controls">
+          <input type="file" id="scan-file" multiple accept="image/*,.pdf,.txt,.csv,application/pdf,text/plain">
+          <button type="button" class="btn-quiet" id="scan-clear">Start over</button>
+        </div>
+        <div class="batch-progress" id="scan-progress-wrap" hidden>
+          <progress id="scan-progress" max="1" value="0" aria-label="Progress"></progress>
+          <span class="hint" id="scan-progress-text" role="status"></span>
+          <button type="button" class="btn-quiet" id="scan-cancel">Stop</button>
+        </div>
+        <p class="hint batch-status" id="scan-status" role="status"></p>
+        <ul class="scan-files" id="scan-files"></ul>
+      </section>
+
+      <section class="card rp-step" id="scan-review" aria-labelledby="scan-s2" hidden>
+        <div class="card-head"><h2 id="scan-s2">2. Check what was found</h2>
+          <span class="hint">Compare each picture with the reading. Correct the text if it is wrong; untick anything that is not a point you want.</span></div>
+        <div class="chips" id="scan-chips"></div>
+        <div class="table-wrap">
+          <table class="table rp-table scan-table">
+            <thead><tr><th>Use</th><th>Found in the document</th><th>Read as</th><th>Name</th><th>Result</th></tr></thead>
+            <tbody id="scan-body"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="scan-more"></p>
+      </section>
+
+      <section class="card rp-step" id="scan-add" aria-labelledby="scan-s3" hidden>
+        <div class="card-head"><h2 id="scan-s3">3. Add to a sheet</h2>
+          <span class="hint">The sheet keeps every point with its document and page. Export all formats from the sheet with “Export for GIS”.</span></div>
+        <div class="actions">
+          <label class="inline">Sheet <select id="scan-sheet" aria-label="Sheet to add the points to"></select></label>
+          <button type="button" class="btn-primary" id="scan-add-btn" disabled>Add to the sheet</button>
+          <button type="button" class="map-btn" id="scan-map" disabled>Show on map</button>
         </div>
       </section>
     </div>
@@ -466,7 +521,7 @@
   <script src="./assets/vendor/jszip.min.js"></script>
   
   <script src="./assets/vendor/xlsx.full.min.js"></script>
-  <script src="./assets/js/core.js?v=1"></script>
+  <script src="./assets/js/core.js?v=2"></script>
   <script src="./assets/js/grid.js?v=2"></script>
   <script src="./assets/js/db.js?v=1"></script>
   <script src="./assets/js/historyStore.js?v=2"></script>
@@ -477,8 +532,10 @@
   <script src="./assets/js/looks.js?v=1"></script>
   <script src="./assets/js/batch-core.js?v=1"></script>
   <script src="./assets/js/geo-io.js?v=1"></script>
-  <script src="./assets/js/batch.js?v=6"></script>
-  <script src="./assets/js/sheet.js?v=3"></script>
+  <script src="./assets/js/batch.js?v=7"></script>
+  <script src="./assets/js/sheet.js?v=4"></script>
+  <script src="./assets/js/scan-core.js?v=2"></script>
+  <script src="./assets/js/scan.js?v=2"></script>
   <script src="./assets/js/tips.js?v=1"></script>
 
 <script>

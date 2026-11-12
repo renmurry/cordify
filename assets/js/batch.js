@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=2");
+      worker = new Worker("./assets/js/batch-worker.js?v=3");
     } catch (e) {
       return null;
     }
@@ -767,5 +767,5 @@
 
   // For the sheet (sheet.js) and tests
   const B = BC();
-  window.CordifyBatch = { readPair: B.readPair, readOne: B.readOne, readRow: B.readRow, detect: B.detect };
+  window.CordifyBatch = { readPair: B.readPair, readOne: B.readOne, readRow: B.readRow, detect: B.detect, loadSql };
 })();

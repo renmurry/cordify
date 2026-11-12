@@ -63,6 +63,16 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   While reviewing you can place a point by clicking the map, see flags for
   duplicate points and points far from their village, and save your progress
   to a small file to continue later.
+- **Scan (Advanced mode)** — the Scan tab finds the coordinates written in
+  images, PDFs and scanned pages. PDFs with real text are read exactly;
+  scanned pages and photos are read with OCR (printed text reads well,
+  handwriting usually does not). Each point is shown beside a picture of where
+  it was found so you can check or correct it, then added to a sheet with its
+  document and page. Nothing is uploaded.
+- **Several sheets and one export for GIS** — keep a sheet per project or
+  document. "Export for GIS" writes every sheet as GeoPackage, GeoJSON, KML,
+  KMZ, GPX, CSV and Excel, one folder per sheet and per format, as a zip (or
+  straight into a folder on desktop Chrome and Edge).
 - **Three looks** — tap the name "Cordify" to switch between Solid (the
   default: no blur and the strongest contrast, best outdoors and on slower
   phones), Frost (translucent glass) and Neon (dark, with glowing buttons).
@@ -105,6 +115,8 @@ assets/js/batch.js       Batch convert (Convert tab): the screen
 assets/js/batch-core.js  Batch convert: reading rows, finding columns, CSV (no UI; also runs in Node)
 assets/js/batch-worker.js Batch convert: background worker that does the converting
 assets/js/geo-io.js      Reads GeoJSON/KML/GPX, writes GeoJSON/KML/GPX/GeoPackage (no UI)
+assets/js/scan-core.js   Finds coordinates in ordinary text (no UI; also runs in Node)
+assets/js/scan.js        Scan tab: reads images and PDFs, review, add to a sheet
 assets/js/sheet.js       "Keep an Excel sheet" (Convert tab)
 assets/js/tips.js        Tooltips and the one-time Repair hint
 assets/js/brand-swap.js  The swapping "DMS ⇄ decimal degrees" header text
@@ -113,6 +125,7 @@ tests/history.test.html  Browser test page for the history store
 tests/core.test.js       Converter and projection tests
 tests/batch-core.test.js Batch reading and CSV tests
 tests/geo-io.test.js     GIS format tests
+tests/scan-core.test.js  Coordinate-finding tests
 tests/repair-engine.test.js  Repair tests
 package.json             Test tooling only (the app needs no install)
 ```

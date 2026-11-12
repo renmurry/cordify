@@ -4,7 +4,7 @@
 //     updates immediately), falling back to cache when offline.
 //   - Everything else: cache-first.
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
-const CACHE_NAME = 'cordify-cache-v17';
+const CACHE_NAME = 'cordify-cache-v18';
 const PRECACHE = [
   './',
   './index.html',
@@ -19,6 +19,8 @@ const PRECACHE = [
   './assets/js/repair-ui.js',
   './assets/js/brand-swap.js',
   './assets/js/looks.js',
+  './assets/js/scan-core.js',
+  './assets/js/scan.js',
   './assets/js/batch.js',
   './assets/js/batch-core.js',
   './assets/js/batch-worker.js',
@@ -89,8 +91,17 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache-first for everything else (icons, library images, the .wasm file)
-  event.respondWith(
-    caches.match(req, { ignoreSearch: true }).then(hit => hit || fetch(req))
-  );
+  // Cache-first for everything else (icons, library images, the .wasm file).
+  // The Scan tab's reader (assets/vendor/tesseract, pdfjs: about 12 MB) is not stored at
+  // install, only the first time it is used, so people who never scan never download it.
+  event.respondWith((async () => {
+    const hit = await caches.match(req, { ignoreSearch: true });
+    if (hit) return hit;
+    const fresh = await fetch(req);
+    if (sameOrigin && fresh.ok && url.pathname.includes('/assets/vendor/')) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(req, fresh.clone());
+    }
+    return fresh;
+  })());
 });
