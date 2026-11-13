@@ -286,14 +286,16 @@
     if (f.dms) cols.push([ "Lat_DMS", ok ? C.formatDMS(res.lat, "lat", f.secDigits) : "" ], [ "Lon_DMS", ok ? C.formatDMS(res.lon, "lon", f.secDigits) : "" ]);
     if (f.ddm) cols.push([ "Lat_DDM", ok ? C.formatDDM(res.lat, "lat", f.minDigits) : "" ], [ "Lon_DDM", ok ? C.formatDDM(res.lon, "lon", f.minDigits) : "" ]);
     if (f.grid && grid) cols.push(...grid(ok ? res.lat : null, ok ? res.lon : null));
-    cols.push([ "Convert_Status", res.empty ? "Empty" : ok ? (res.check ? "OK - check" : "OK") : "Not converted: " + res.error ],
+    // res.repaired: "fixed" (one clear reading) or "check" (best guess) when Repair rebuilt a mistyped value
+    const done = res.repaired === "fixed" ? "Repaired - check" : res.repaired ? "Best guess - check" : res.check ? "OK - check" : "OK";
+    cols.push([ "Convert_Status", res.empty ? "Empty" : ok ? done : "Not converted: " + res.error ],
       [ "Convert_Check", ok && res.check ? res.check : "" ]);
     return cols;
   }
   // The two columns that describe a row rather than hold a value.
   const STATUS_COLS = new Set([ "Convert_Status", "Convert_Check" ]);
   // How a row is coloured in Excel: converted, converted but worth checking, not converted.
-  const kindOf = res => res.empty ? null : res.lat === undefined ? "bad" : res.check ? "check" : "ok";
+  const kindOf = res => res.empty ? null : res.lat === undefined ? "bad" : res.repaired === "fixed" ? "fixed" : res.repaired || res.check ? "check" : "ok";
 
   // Grid cells from a system spec (see core.js project): what grid.js does on the page.
   function gridCells(spec) {

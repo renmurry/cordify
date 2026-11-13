@@ -349,6 +349,13 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
   background: var(--st-confirmed); color: #fff; font-size: .875rem; font-weight: 600;
 }
 .rp-place-banner[hidden] { display: none; }
+.rp-draw-bar { flex-wrap: wrap; background: var(--st-bad); }
+.rp-draw-bar .actions button { padding: 4px 10px; }
+.rp-draw-bar .inline { color: #fff; font-weight: 600; }
+.rp-draw-bar .btn-quiet { color: #fff; }
+.rp-boundary-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.rp-places { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.rp-places .hint { margin: 0; }
 .rp-place-banner .btn-quiet { color: #fff; }
 #rp-map.is-placing, #rp-map.is-placing .leaflet-interactive { cursor: crosshair; }
 .flag {
@@ -420,6 +427,8 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
 .batch-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .batch-table tr.batch-fail td { background: var(--st-bad-bg); }
 .batch-table tr.batch-check td { background: var(--st-choose-bg); }
+.batch-table tr.batch-fixed td { background: var(--st-fixed-bg); }
+.batch-repair-here { margin-left: 4px; padding: 3px 10px; }
 tr.batch-nocols td { background: var(--st-choose-bg); }
 #batch-mapping .table select { max-width: 220px; }
 

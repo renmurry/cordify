@@ -134,5 +134,37 @@ expect("a point inside has nothing to keep", r.status === "ok" && r.typed === un
 [ r ] = R.repairRows([ { id: 0, text: "26°48’000, 95°03’000" } ], { features: [ tight ] });
 expect("a mistyped value has nothing to keep as typed", r.typed === undefined && r.status !== "ok", r);
 
+// Excel stores numbers with all of a computer's digits; a correctly typed one must still read.
+const wide = R.buildFeature({ rings: [ [ [ 94, 26 ], [ 96, 26 ], [ 96, 28 ], [ 94, 28 ], [ 94, 26 ] ] ] }, 0);
+[ r ] = R.repairRows([ { id: 0, text: "26.183333333333334, 95.01666666666667" } ], { features: [ wide ] });
+expect("a full-precision number reads as typed", r.status === "ok" && near(r.lat, 26.183333333333334, 1e-11) && near(r.lon, 95.01666666666667, 1e-11), r);
+[ r ] = R.repairRows([ { id: 0, latText: String(26.183333333333334), lonText: String(95.01666666666667) } ], { features: [ wide ] });
+expect("...also from two separate cells", r.status === "ok", r);
+
+/* ---------- village locations file ---------- */
+
+expect("village names match however they are typed", R.placeKey("Tamlu Village") === "tamlu" && R.placeKey("TAMLU vill.") === "tamlu" && R.placeKey(" tamlu ") === "tamlu" && R.placeKey("T/Chingha") === "tchingha");
+const places = R.buildPlaces([
+  { name: "Kilo Village", lat: 26.55, lon: 95.03 },
+  { name: "Mike", lat: 26.80, lon: 94.96 },
+  { name: "Twin", lat: 26.70, lon: 95.00 }, { name: "Twin", lat: 26.95, lon: 95.15 },          // same name, far apart: ambiguous
+  { name: "Twin", lat: 26.95, lon: 95.15, group: "North" }                                       // ...but known within its district
+]);
+expect("an ambiguous name is left out, a district-qualified one is kept", !places.has("twin") && places.has("north|twin") && places.ambiguous === 1);
+expect("lookup prefers the row's district", R.placeFor(places, { village: "TWIN", group: "North" }).lat === 26.95 && R.placeFor(places, { village: "Twin", group: "South" }) === null);
+
+// Two readings land inside; the one near the village's known location wins clearly.
+const box2 = R.buildFeature({ name: "Box", rings: [ [ [ 94.5, 26.0 ], [ 95.5, 26.0 ], [ 95.5, 27.5 ], [ 94.5, 27.5 ], [ 94.5, 26.0 ] ] ] }, 0);
+const amb = { id: 0, text: "26°48’000, 94°58’000", village: "Mike" };   // 26.8 / 26.48, 94.9667 / 94.58
+let noRef = R.repairRows([ amb ], { features: [ box2 ] })[0];
+let withRef = R.repairRows([ amb ], { features: [ box2 ], places })[0];
+expect("without village locations, several readings fit", noRef.status === "choose", noRef);
+expect("with them, the reading at the village wins", withRef.status === "fixed" && near(withRef.lat, 26.8, 1e-9) && near(withRef.lon, 94 + 58 / 60, 1e-9), withRef);
+
+// A valid point outside the boundary but at its village's known location agrees with it.
+const tight2 = R.buildFeature({ name: "Box", rings: [ [ [ 94.9, 26.7 ], [ 95.2, 26.7 ], [ 95.2, 27.0 ], [ 94.9, 27.0 ], [ 94.9, 26.7 ] ] ] }, 0);
+[ r ] = R.repairRows([ { id: 0, text: "26.56, 95.04", village: "Kilo" } ], { features: [ tight2 ], places });
+expect("a valid point at its village's location, outside the boundary, can be kept", r.status === "outside" && /village locations file/.test(r.notes[0]) && r.typed.lat === 26.56, r);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

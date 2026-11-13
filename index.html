@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=14">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=15">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -289,7 +289,7 @@
         <div id="batch-preview-wrap" hidden>
           <div class="batch-preview-head">
             <span class="hint" id="batch-preview-label"></span>
-            <label class="inline">Show <select id="batch-view" aria-label="Which rows to show"><option value="all">All rows</option><option value="failed">Not converted</option><option value="check">Converted, worth checking</option></select></label>
+            <label class="inline">Show <select id="batch-view" aria-label="Which rows to show"><option value="all">All rows</option><option value="failed">Not converted</option><option value="check">Converted, worth checking</option><option value="repaired" hidden>Repaired</option></select></label>
           </div>
           <div class="vt" id="batch-vt" tabindex="0" aria-label="Converted rows">
             <div class="vt-view" id="batch-vt-view">
@@ -388,11 +388,20 @@
 
       <section class="card rp-step" aria-labelledby="rp-s1">
         <div class="card-head"><h2 id="rp-s1">1. Boundary <button type="button" class="help" aria-label="About the boundary" data-tip="The area your points must fall inside, e.g. district polygons. Only readings that land inside are kept. Optional: without it, the area is estimated from the rows that are already correct.">?</button></h2><span class="hint">KML, KMZ, zipped Shapefile (WGS84) or GeoJSON — optional, but much more reliable</span></div>
-        <input type="file" id="rp-boundary" accept=".kml,.kmz,.zip,.geojson,.json">
+        <div class="rp-boundary-row">
+          <input type="file" id="rp-boundary" accept=".kml,.kmz,.zip,.geojson,.json">
+          <button type="button" id="rp-draw" data-tip="Click corners on the map to draw an area. Use it when you have no boundary file, or to add a missing piece to one (for example a village just across the line).">Draw an area on the map</button>
+          <button type="button" class="btn-quiet" id="rp-boundary-download" hidden data-tip="The boundary in use, including areas you drew, as a KML file to keep or share.">Download boundary (KML)</button>
+        </div>
         <p id="rp-boundary-status" class="hint"></p>
         <label class="inline" id="rp-namefield-wrap" hidden data-tip="The attribute in the boundary file that holds area names (e.g. district). Used to match your groups to polygons by name.">Name field
           <select id="rp-namefield"></select>
         </label>
+        <div class="rp-places">
+          <span class="field-label">Village locations (optional) <button type="button" class="help" aria-label="About village locations" data-tip="A list of villages with their locations: a spreadsheet with a name column and coordinates, or named points in KML, KMZ or GeoJSON. Repair then prefers readings near each row's own village, and flags points far from it. Matched to the village column in your data; a district column helps when names repeat.">?</button></span>
+          <input type="file" id="rp-places" accept=".xlsx,.xls,.csv,.kml,.kmz,.geojson,.json,.gpx">
+          <p id="rp-places-status" class="hint"></p>
+        </div>
       </section>
 
       <section class="card rp-step" aria-labelledby="rp-s2">
@@ -448,6 +457,15 @@
       </section>
 
       <div id="rp-map-wrap" class="card rp-step" hidden>
+        <div id="rp-draw-bar" class="rp-place-banner rp-draw-bar" hidden>
+          <span id="rp-draw-text"></span>
+          <span class="actions">
+            <label class="inline" id="rp-draw-attach-wrap">Add to <select id="rp-draw-attach" aria-label="What the drawn area is part of"></select></label>
+            <button type="button" id="rp-draw-finish" disabled>Finish</button>
+            <button type="button" class="btn-quiet" id="rp-draw-undo">Undo corner</button>
+            <button type="button" class="btn-quiet" id="rp-draw-cancel">Cancel (Esc)</button>
+          </span>
+        </div>
         <div id="rp-place-banner" class="rp-place-banner" hidden>
           <span id="rp-place-text"></span>
           <button type="button" id="rp-place-cancel" class="btn-quiet">Cancel (Esc)</button>
@@ -528,14 +546,15 @@
   <script src="./assets/js/db.js?v=1"></script>
   <script src="./assets/js/historyStore.js?v=2"></script>
   <script src="./assets/js/app.js?v=17"></script>
-  <script src="./assets/js/repair-engine.js?v=5"></script>
+  <script src="./assets/js/repair-engine.js?v=7"></script>
   <script src="./assets/js/xlsx-color.js?v=1"></script>
-  <script src="./assets/js/repair-ui.js?v=7"></script>
+  <script src="./assets/js/reference.js?v=1"></script>
+  <script src="./assets/js/repair-ui.js?v=8"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
   <script src="./assets/js/looks.js?v=1"></script>
-  <script src="./assets/js/batch-core.js?v=3"></script>
+  <script src="./assets/js/batch-core.js?v=4"></script>
   <script src="./assets/js/geo-io.js?v=1"></script>
-  <script src="./assets/js/batch.js?v=9"></script>
+  <script src="./assets/js/batch.js?v=10"></script>
   <script src="./assets/js/sheet.js?v=4"></script>
   <script src="./assets/js/scan-core.js?v=2"></script>
   <script src="./assets/js/scan.js?v=2"></script>
