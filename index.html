@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=13">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=14">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -267,7 +267,7 @@
 
         <div class="actions" id="batch-actions" hidden>
           <button class="btn-primary" id="batch-run" type="button">Convert all rows</button>
-          <button id="batch-download-xlsx" type="button" disabled data-tip="The same workbook with the new columns added to each converted sheet. Other sheets are kept as they are.">Download XLSX</button>
+          <button id="batch-download-xlsx" type="button" disabled data-tip="The same workbook with the new columns added to each converted sheet, and rows coloured by result (a Legend sheet explains the colours). Other sheets are kept as they are.">Download XLSX</button>
           <button id="batch-download-csv" type="button" disabled data-tip="One CSV for one sheet, or a zip with one CSV per sheet. Opens correctly in Excel, including the ° symbol.">Download CSV</button>
           <button id="batch-map" type="button" class="map-btn" disabled data-tip="Shows the converted points on the Map tab. Very large files are thinned evenly to 50,000 points.">Show on map</button>
         </div>
@@ -289,7 +289,7 @@
         <div id="batch-preview-wrap" hidden>
           <div class="batch-preview-head">
             <span class="hint" id="batch-preview-label"></span>
-            <label class="inline"><input type="checkbox" id="batch-only-problems"> Show only rows that couldn't be read</label>
+            <label class="inline">Show <select id="batch-view" aria-label="Which rows to show"><option value="all">All rows</option><option value="failed">Not converted</option><option value="check">Converted, worth checking</option></select></label>
           </div>
           <div class="vt" id="batch-vt" tabindex="0" aria-label="Converted rows">
             <div class="vt-view" id="batch-vt-view">
@@ -465,6 +465,7 @@
             <span id="rp-review-status" class="hint"></span>
           </div>
         </div>
+        <div id="rp-habits" class="rp-habits" hidden></div>
         <div id="rp-summary" class="chips"></div>
         <div class="table-wrap">
           <table class="table rp-table">
@@ -526,13 +527,14 @@
   <script src="./assets/js/db.js?v=1"></script>
   <script src="./assets/js/historyStore.js?v=2"></script>
   <script src="./assets/js/app.js?v=17"></script>
-  <script src="./assets/js/repair-engine.js?v=3"></script>
-  <script src="./assets/js/repair-ui.js?v=4"></script>
+  <script src="./assets/js/repair-engine.js?v=4"></script>
+  <script src="./assets/js/xlsx-color.js?v=1"></script>
+  <script src="./assets/js/repair-ui.js?v=5"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
   <script src="./assets/js/looks.js?v=1"></script>
-  <script src="./assets/js/batch-core.js?v=1"></script>
+  <script src="./assets/js/batch-core.js?v=3"></script>
   <script src="./assets/js/geo-io.js?v=1"></script>
-  <script src="./assets/js/batch.js?v=7"></script>
+  <script src="./assets/js/batch.js?v=9"></script>
   <script src="./assets/js/sheet.js?v=4"></script>
   <script src="./assets/js/scan-core.js?v=2"></script>
   <script src="./assets/js/scan.js?v=2"></script>

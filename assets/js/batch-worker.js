@@ -12,7 +12,7 @@
  *   exportGeo  write its converted rows as GeoJSON, KML, GPX or GeoPackage
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=2", "repair-engine.js?v=3", "batch-core.js?v=1", "geo-io.js?v=1");
+importScripts("core.js?v=2", "repair-engine.js?v=4", "batch-core.js?v=3", "geo-io.js?v=1");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads
@@ -115,7 +115,7 @@ async function eachRecord(file, onRecord, onProgress) {
 
 function convertColumns(m) {
   const n = m.a.length;
-  const lat = new Float64Array(n), lon = new Float64Array(n), status = new Uint8Array(n);
+  const lat = new Float64Array(n), lon = new Float64Array(n), status = new Uint8Array(n), precision = new Float32Array(n);
   const errors = [];
   const cfg = { mode: m.mode, one: 0, lat: 0, lon: 1 };
   const row = [ null, null ];
@@ -127,20 +127,21 @@ function convertColumns(m) {
     if (res.lat !== undefined) {
       lat[i] = res.lat;
       lon[i] = res.lon;
+      precision[i] = res.precision;
     } else {
-      lat[i] = lon[i] = NaN;
+      lat[i] = lon[i] = precision[i] = NaN;
       if (!res.empty) errors.push([ i, res.error ]);
     }
     if (i % 20000 === 19999) postMessage({ type: "progress", job: m.job, done: i + 1, total: n });
   }
-  postMessage({ type: "done", job: m.job, lat, lon, status, errors }, [ lat.buffer, lon.buffer, status.buffer ]);
+  postMessage({ type: "done", job: m.job, lat, lon, status, precision, errors }, [ lat.buffer, lon.buffer, status.buffer, precision.buffer ]);
 }
 
 /* ---------- a CSV of any size ---------- */
 
 async function convertCsv(m) {
   const cfg = m.cfg, delim = m.delim;
-  const lat = grow(Float64Array), lon = grow(Float64Array), status = grow(Uint8Array);
+  const lat = grow(Float64Array), lon = grow(Float64Array), status = grow(Uint8Array), precision = grow(Float32Array);
   const starts = grow(Float64Array), ends = grow(Float64Array), recNo = grow(Uint32Array);
   const errors = new Map();
   const counts = { ok: 0, failed: 0, empty: 0, mistyped: 0 };
@@ -165,10 +166,12 @@ async function convertCsv(m) {
     if (st === B.OK) {
       lat.push(res.lat);
       lon.push(res.lon);
+      precision.push(res.precision);
       counts.ok++;
     } else {
       lat.push(NaN);
       lon.push(NaN);
+      precision.push(NaN);
       if (st === B.EMPTY) counts.empty++;
       else {
         counts.failed++;
@@ -178,9 +181,12 @@ async function convertCsv(m) {
     }
   }, bytes => postMessage({ type: "progress", job: m.job, done: bytes, total: m.file.size, rows: status.length }));
   big = { file: m.file, cfg, delim, maxFields, errors, lat: lat.done(), lon: lon.done(), status: status.done(), starts: starts.done(), ends: ends.done(), recNo: recNo.done() };
+  big.checks = B.qualityChecks(big.lat, big.lon, big.status, precision.done(), big.recNo);
+  counts.check = big.checks.size;
+  counts.coarse = big.checks.coarse || 0;
   // The page gets its own copies for the preview and the map.
   const out = { lat: big.lat.slice(), lon: big.lon.slice(), status: big.status.slice(), recNo: big.recNo.slice() };
-  postMessage({ type: "done", job: m.job, n: big.status.length, counts, ...out }, [ out.lat.buffer, out.lon.buffer, out.status.buffer, out.recNo.buffer ]);
+  postMessage({ type: "done", job: m.job, n: big.status.length, counts, checks: [ ...big.checks ], ...out }, [ out.lat.buffer, out.lon.buffer, out.status.buffer, out.recNo.buffer ]);
 }
 
 // Original text and reason for some rows, read back from the file by position.
@@ -232,7 +238,7 @@ async function exportCsv(m) {
     }
     if (i < big.starts.length && big.starts[i] === start) {
       const st = big.status[i];
-      const res = st === B.EMPTY ? { empty: true } : st === B.OK ? { lat: big.lat[i], lon: big.lon[i] } : { error: big.errors.get(i) };
+      const res = st === B.EMPTY ? { empty: true } : st === B.OK ? { lat: big.lat[i], lon: big.lon[i], check: big.checks.get(i) } : { error: big.errors.get(i) };
       add(text, B.outCols(res, m.f, grid).map(c => c[1]), fields);
       i++;
     } else {
@@ -248,7 +254,7 @@ async function exportGeo(m) {
   if (!big) return postMessage({ type: "exported", job: m.job, blob: null });
   needProj(m.f.grid ? m.gridSpec : "off");
   const G = self.CordifyGeoIO, d = big.delim, grid = m.f.grid ? B.gridCells(m.gridSpec) : null;
-  const added = B.outCols({ empty: true }, m.f, grid).slice(0, -1).map(c => c[0]);
+  const added = B.outCols({ empty: true }, m.f, grid).filter(c => c[0] !== "Convert_Status").map(c => c[0]);
   const isPkg = m.format === "gpkg";
   let pkg = null, tb = null, w = null;
   if (isPkg) {
@@ -276,8 +282,8 @@ async function exportGeo(m) {
     const k = i++;
     if (big.status[k] !== B.OK) return;
     const fields = B.parseCsvRecord(text, d);
-    const res = { lat: big.lat[k], lon: big.lon[k] };
-    const cols = B.outCols(res, m.f, grid).slice(0, -1);
+    const res = { lat: big.lat[k], lon: big.lon[k], check: big.checks.get(k) };
+    const cols = B.outCols(res, m.f, grid).filter(c => c[0] !== "Convert_Status");
     if (isPkg) {
       tb.point(res.lat, res.lon, head.map((h, j) => fields[j]).concat(cols.map(c => c[1])));
       return;

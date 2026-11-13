@@ -583,7 +583,7 @@
     setStatus("rp-run-status", "Repairing…");
     setTimeout(() => {
       const t = performance.now();
-      state.results = R.repairRows(state.rows, { features: state.features, groupFeatures, digitFix: $("rp-digitfix").checked });
+      state.results = R.repairRows(state.rows, { features: state.features, groupFeatures, digitFix: $("rp-digitfix").checked, estimated: state.estimated });
       state.decisions = new Map();
       state.page = 0;
       state.filter = "all";
@@ -683,6 +683,9 @@
   function filtered() {
     const f = state.filter;
     const out = [];
+    if (f === "habit") {
+      return habitOpen(state.results.habits[state.habitShown]).map(x => x[0]);
+    }
     state.results.forEach((r, i) => {
       const s = effective(i).status;
       if (f === "flag") {
@@ -694,8 +697,40 @@
     return out;
   }
 
+  const FORMAT_NAME = { DD: "decimal degrees", DDM: "degrees + decimal minutes", DMS: "degrees, minutes, seconds" };
+  // "lat: ' read as decimal point|lon: ' read as decimal point|read as DDM" -> plain words
+  function describeHabit(sig) {
+    const parts = [ ...new Set(sig.split("|").filter(Boolean).map(n => n.replace(/^(lat|lon): /, ""))) ];
+    return parts.map(p => p.replace(/^read as (.+)$/, (m, f) => "read as " + f.split(" / ").map(x => FORMAT_NAME[x] || x).join(" / "))).join(", ");
+  }
+  // Rows of a habit that still wait for a decision, with the reading the habit gives each.
+  function habitOpen(h) {
+    const out = [];
+    for (const i of h.rows) {
+      const d = state.decisions.get(i);
+      if (d && (d.confirmed || d.rejected || d.manual)) continue;
+      const k = state.results[i].candidates.findIndex(c => R.signatureOf(c) === h.signature);
+      if (k >= 0) out.push([ i, k ]);
+    }
+    return out;
+  }
+  function renderHabits() {
+    const box = $("rp-habits");
+    const habits = (state.results.habits || []).map((h, n) => ({ h, n, open: habitOpen(h) })).filter(x => x.open.length);
+    box.hidden = !habits.length;
+    if (!habits.length) return;
+    box.innerHTML = `<h3>Typing habits <span class="hint">Rows typed the same way are read the same way. Check one example, then confirm them all at once.</span></h3>` +
+      habits.map(({ h, n, open }) => {
+        const [ i, k ] = open[0], c = state.results[i].candidates[k], row = state.rows[i];
+        return `<div class="rp-habit"><div><b>${esc(h.group || row.sheet)}: ${open.length} row${open.length === 1 ? "" : "s"}</b> typed like <code>${esc(row.raw.replace(/\n/g, " ⏎ "))}</code>
+          → <b class="num">${fmt(c.lat)}, ${fmt(c.lon)}</b><br><span class="hint">${esc(describeHabit(h.signature))}</span></div>
+          <div class="actions"><button type="button" class="btn-quiet" data-habit-show="${n}">Show them</button><button type="button" data-habit="${n}">Confirm all ${open.length}</button></div></div>`;
+      }).join("");
+  }
+
   function renderReview() {
     computeFlags();
+    renderHabits();
     const c = counts();
     const chips = [
       [ "all", "All", state.results.length - (c.empty || 0) ],
@@ -1070,17 +1105,46 @@
     return copy;
   }
 
+  // Excel colour for each result: the same colours as the review table.
+  const KIND = { ok: "ok", fixed: "fixed", choose: "check", guess: "check", confirmed: "confirmed", placed: "confirmed", outside: "bad", failed: "bad", rejected: "bad" };
+  const LEGEND = [
+    [ "ok", "Green", "Unchanged: typed correctly and inside the area." ],
+    [ "fixed", "Yellow", "Corrected: one clear reading. Check it." ],
+    [ "check", "Orange", "Needs check: several readings were possible, or a best guess was used." ],
+    [ "confirmed", "Blue", "Checked by you, or placed by you on the map." ],
+    [ "bad", "Red", "Not fixed: outside the area, no reading fits, or rejected by you. The reason is in Repair_Note." ]
+  ];
+
+  async function saveColoured(out, plan, name) {
+    const C = window.CordifyXlsxColor;
+    if (!C || typeof JSZip === "undefined") return XLSX.writeFile(out, name);
+    plan.push(C.addLegend(XLSX, out, LEGEND, "When a row holds several coordinates, it takes the colour of the one that needs most attention. Rows with no colour have no coordinate. Made by Cordify."));
+    try {
+      const bytes = await C.colour(XLSX.write(out, { type: "array", bookType: "xlsx" }), plan, JSZip);
+      download(name, new Blob([ bytes ], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    } catch (e) {
+      XLSX.writeFile(out, name);   // the same file, without colours
+    }
+  }
+
   function exportWorkbook() {
     const out = XLSX.utils.book_new();
     const f = formats();
+    const C = window.CordifyXlsxColor;
+    const worse = C ? C.worse : (a, b) => b || a;
     if (state.source === "paste") {
       const names = exportValues(0, f).cols.map(c => c[0]);
       const aoa = [ [ "Original" ].concat(names) ];
-      state.rows.forEach((r, i) => aoa.push([ noCR(r.raw) ].concat(exportValues(i, f).cols.map(c => c[1]))));
+      const rows = new Map();
+      state.rows.forEach((r, i) => {
+        aoa.push([ noCR(r.raw) ].concat(exportValues(i, f).cols.map(c => c[1])));
+        const kind = KIND[effective(i).status];
+        if (kind) rows.set(i + 2, kind);
+      });
       XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(aoa), "Repaired");
-      XLSX.writeFile(out, "cordify_repaired.xlsx");
-      return;
+      return saveColoured(out, [ { sheet: 1, header: 1, rows } ], "cordify_repaired.xlsx");
     }
+    const plan = [];
     const bySheet = new Map();
     state.rows.forEach((r, i) => {
       if (!bySheet.has(r.sheet)) bySheet.set(r.sheet, []);
@@ -1108,8 +1172,14 @@
         col += names.length;
       }
       XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(aoa), name);
+      const rows = new Map();
+      for (const i of idx) {
+        const n = state.rows[i].rowIndex + 1;
+        rows.set(n, worse(rows.get(n), KIND[effective(i).status]));
+      }
+      plan.push({ sheet: out.SheetNames.length, header: s.h + 1, rows });
     }
-    XLSX.writeFile(out, `${state.fileName || "cordify"}_repaired.xlsx`);
+    return saveColoured(out, plan, `${state.fileName || "cordify"}_repaired.xlsx`);
   }
 
   function pointFeatures() {
@@ -1205,6 +1275,24 @@
       }
     });
     $("rp-table").addEventListener("click", onTableClick);
+    $("rp-habits").addEventListener("click", e => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.habitShow != null) {
+        state.filter = "habit";
+        state.habitShown = +b.dataset.habitShow;
+        state.page = 0;
+        renderReview();
+        return;
+      }
+      const h = state.results.habits[+b.dataset.habit];
+      if (!h) return;
+      const open = habitOpen(h);
+      open.forEach(([ i, k ]) => state.decisions.set(i, { chosen: k, confirmed: true }));
+      if (state.filter === "habit") state.filter = "all";
+      changed();
+      flash(`Confirmed ${open.length} rows typed the same way — marked as checked by you`);
+    });
     $("rp-table").addEventListener("change", onTableChange);
     $("rp-confirm-all").addEventListener("click", () => {
       state.results.forEach((r, i) => {

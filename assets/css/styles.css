@@ -324,6 +324,12 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
 .badge.st-bad { background: var(--st-bad); }
 .badge.st-confirmed { background: var(--st-confirmed); }
 .rp-pager { margin-top: 12px; }
+.rp-habits { margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--accent-soft); }
+.rp-habits h3 { margin: 0 0 8px; font-size: .95rem; }
+.rp-habits h3 .hint { display: block; font-weight: 400; margin-top: 2px; }
+.rp-habit { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--line); font-size: .875rem; }
+.rp-habit > div:first-child { min-width: 0; flex: 1 1 320px; }
+.rp-habit code { font-size: .8125rem; word-break: break-word; }
 .rp-formats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-bottom: 14px; }
 .rp-fmt { display: inline-flex; align-items: center; gap: 6px; font-size: .875rem; }
 .rp-fmt select { padding: 4px 6px; font-size: .8125rem; }
@@ -413,6 +419,7 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
 .batch-table pre.raw { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; max-width: 240px; }
 .batch-table td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .batch-table tr.batch-fail td { background: var(--st-bad-bg); }
+.batch-table tr.batch-check td { background: var(--st-choose-bg); }
 tr.batch-nocols td { background: var(--st-choose-bg); }
 #batch-mapping .table select { max-width: 220px; }
 
