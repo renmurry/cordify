@@ -173,6 +173,26 @@ npm test
 `npm install` only fetches proj4 so the projection results can be checked
 against it; without it those checks are skipped and the rest still run.
 
+## Publishing (versions on the live site)
+
+The live site holds three versions, and a menu next to the name switches
+between them:
+
+- **Latest**: the newest release tag (`v1.2.3`), at the usual address
+- **Previous**: the release before it, at `previous/`, as a fallback
+- **Preview**: a branch that is not released yet, at `preview/`, to try first
+
+Previous and Preview work online only, and all three share what the browser
+has saved. To publish after tagging a release:
+
+```
+node tools/publish-pages.js --push                       # Preview = main, if it has unreleased commits
+node tools/publish-pages.js --push --preview my-branch   # Preview = an open pull request's branch
+node tools/publish-pages.js --out site                   # build only, to look at locally
+```
+
+GitHub Pages must be set to publish from the `gh-pages` branch.
+
 ## Running locally
 
 Because it uses a service worker, open it through a local web server rather than

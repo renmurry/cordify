@@ -4,7 +4,9 @@
 //     updates immediately), falling back to cache when offline.
 //   - Everything else: cache-first.
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
-const CACHE_NAME = 'cordify-cache-v23';
+// This copy's folder on the site, e.g. /cordify/
+const BASE = new URL('./', self.location).pathname;
+const CACHE_NAME = 'cordify-cache-v24';
 const PRECACHE = [
   './',
   './index.html',
@@ -21,6 +23,7 @@ const PRECACHE = [
   './assets/js/reference.js',
   './assets/js/brand-swap.js',
   './assets/js/looks.js',
+  './assets/js/versions.js',
   './assets/js/scan-core.js',
   './assets/js/scan.js',
   './assets/js/batch.js',
@@ -70,6 +73,9 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
+  // The other versions on the site (previous/, preview/) and the list of versions are always
+  // fetched from the network: this offline copy is only for the version it belongs to.
+  if (sameOrigin && (url.pathname.startsWith(BASE + 'previous/') || url.pathname.startsWith(BASE + 'preview/') || url.pathname === BASE + 'channels.json')) return;
   const isAppCode = sameOrigin && (
     req.mode === 'navigate' ||
     url.pathname.endsWith('.html') ||
