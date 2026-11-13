@@ -128,6 +128,11 @@ expect("clean rows inside are untouched", h.all.slice(0, clean.length).every(r =
 const tight = R.buildFeature({ name: "Box", rings: [ [ [ 94.9, 26.7 ], [ 95.2, 26.7 ], [ 95.2, 27.0 ], [ 94.9, 27.0 ], [ 94.9, 26.7 ] ] ] }, 0);
 [ r ] = R.repairRows([ { id: 0, text: "26.50000, 95.05000" } ], { features: [ tight ] });
 expect("with a boundary file, a valid point outside is not marked ok", r.status !== "ok", r);
+expect("...but what was typed is recorded, so a person can keep it", r.typed && r.typed.lat === 26.5 && r.typed.lon === 95.05, r.typed);
+[ r ] = R.repairRows([ { id: 0, text: "26.80000, 95.05000" } ], { features: [ tight ] });
+expect("a point inside has nothing to keep", r.status === "ok" && r.typed === undefined, r);
+[ r ] = R.repairRows([ { id: 0, text: "26°48’000, 95°03’000" } ], { features: [ tight ] });
+expect("a mistyped value has nothing to keep as typed", r.typed === undefined && r.status !== "ok", r);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

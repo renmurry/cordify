@@ -77,7 +77,9 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   file, correctly typed points near the estimated area are kept as typed.
   A boundary you load is remembered on the device (in the browser's own
   storage, never uploaded) and loads by itself next time; "Forget it"
-  removes it.
+  removes it. A value typed correctly but outside the boundary (a village on
+  the border, or a rough boundary line) can be kept as typed: per row, or in
+  one click for all such values that sit with other points of their village.
   The Excel export colours each row by its result, with a Legend sheet.
 - **Scan (Advanced mode)** — the Scan tab finds the coordinates written in
   images, PDFs and scanned pages. PDFs with real text are read exactly;

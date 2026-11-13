@@ -688,6 +688,9 @@
     if (d && d.rejected) {
       return { status: "rejected", lat: null, lon: null, cand: null, res };
     }
+    if (d && d.keep && res.typed) {
+      return { status: "confirmed", lat: res.typed.lat, lon: res.typed.lon, cand: null, res, kept: true };
+    }
     const k = d && d.chosen != null ? d.chosen : res.chosen;
     const cand = k >= 0 ? res.candidates[k] : null;
     const lat = cand ? cand.lat : res.lat, lon = cand ? cand.lon : res.lon;
@@ -697,6 +700,7 @@
 
   function noteFor(i) {
     const e = effective(i);
+    if (e.kept) return "kept as typed by you, although it is outside the boundary";
     if (e.status === "confirmed") return "checked by you" + (e.cand && e.cand.notes.length ? " — " + e.cand.notes.filter(n => !/^read as/.test(n)).join("; ") : "");
     if (e.status === "rejected") return "rejected by you";
     if (e.status === "placed") return "placed by hand on the map" + (e.manual.inside ? "" : " — outside the boundary");
@@ -842,6 +846,9 @@
     $("rp-confirm-all").disabled = !c.fixed;
     $("rp-guess-all").textContent = `Use best guess for all to check (${c.choose || 0})`;
     $("rp-guess-all").disabled = !c.choose;
+    const keepable = keepableRows().length;
+    $("rp-keep-all").hidden = !keepable;
+    $("rp-keep-all").textContent = `Keep values that agree with their village (${keepable})`;
   }
 
   function rowHtml(i) {
@@ -850,14 +857,18 @@
     const d = state.decisions.get(i);
     const k = d && d.chosen != null ? d.chosen : res.chosen;
     let choice = "";
-    if (res.candidates.length > 1 || res.status === "choose" || res.status === "fixed") {
+    if (res.candidates.length > 1 || res.status === "choose" || res.status === "fixed" || res.typed) {
+      const kept = !!(d && d.keep);
       choice = `<select class="rp-choose" data-i="${i}" aria-label="Choose a reading">` +
-        res.candidates.map((c, j) => `<option value="${j}"${j === k ? " selected" : ""}>${fmt(c.lat)}, ${fmt(c.lon)}${c.distKm != null ? ` · ${c.distKm.toFixed(1)} km from village` : ""}</option>`).join("") +
+        (!res.candidates.length && !(d && (d.keep || d.rejected)) ? `<option value="" selected disabled>Choose…</option>` : "") +
+        res.candidates.map((c, j) => `<option value="${j}"${j === k && !kept ? " selected" : ""}>${fmt(c.lat)}, ${fmt(c.lon)}${c.distKm != null ? ` · ${c.distKm.toFixed(1)} km from village` : ""}</option>`).join("") +
+        (res.typed ? `<option value="typed"${kept ? " selected" : ""}>As typed: ${fmt(res.typed.lat)}, ${fmt(res.typed.lon)}</option>` : "") +
         `<option value="reject"${d && d.rejected ? " selected" : ""}>None of these</option></select>`;
     }
     const similar = res.status === "choose" || res.status === "fixed" ? similarRows(i).length : 0;
     const actions = [
       (res.status === "fixed" || res.status === "choose") && !(d && (d.confirmed || d.rejected)) ? `<button type="button" class="rp-confirm" data-i="${i}" data-tip="Mark this reading as checked by you.">Confirm</button>` : "",
+      res.typed && !(d && (d.confirmed || d.rejected || d.manual)) ? `<button type="button" class="rp-keep" data-i="${i}" data-tip="Keep the value exactly as typed and mark it as checked by you. For a village on the border, or where the boundary line is rough.">Keep as typed</button>` : "",
       similar ? `<button type="button" class="btn-quiet rp-similar" data-i="${i}" data-tip="Use the same kind of correction on the other rows typed the same way, and mark them all as checked.">Same for ${similar} similar</button>` : "",
       e.status !== "empty" ? `<button type="button" class="btn-quiet rp-place" data-i="${i}" data-tip="Click on the map to set this point by hand. The map zooms to this village's other points.">${e.status === "failed" || e.status === "outside" || e.status === "rejected" ? "Place on map" : "Move"}</button>` : "",
       e.lat != null ? `<button type="button" class="btn-quiet rp-zoom" data-i="${i}" data-tip="Show this point on the map below.">Map</button>` : ""
@@ -874,6 +885,17 @@
       <td>${choice}</td>
       <td class="row-actions">${actions}</td>
     </tr>`;
+  }
+
+  // Typed correctly, outside the boundary, but sitting with other points of the same village:
+  // almost always a village on the border or a rough boundary line.
+  function keepableRows() {
+    const out = [];
+    state.results.forEach((r, i) => {
+      const d = state.decisions.get(i);
+      if (r.status === "outside" && r.typed && !(d && (d.confirmed || d.rejected || d.manual))) out.push(i);
+    });
+    return out;
   }
 
   // Rows typed the same way (same pattern), in the same group, still waiting for review.
@@ -895,7 +917,10 @@
     const b = e.target.closest("button");
     if (!b) return;
     const i = +b.dataset.i;
-    if (b.classList.contains("rp-confirm")) {
+    if (b.classList.contains("rp-keep")) {
+      state.decisions.set(i, { keep: true, confirmed: true });
+      changed();
+    } else if (b.classList.contains("rp-confirm")) {
       const d = state.decisions.get(i) || {};
       state.decisions.set(i, { ...d, confirmed: true });
       changed();
@@ -929,7 +954,8 @@
     if (!s) return;
     const i = +s.dataset.i;
     if (s.value === "reject") state.decisions.set(i, { rejected: true });
-    else state.decisions.set(i, { chosen: +s.value, confirmed: true });
+    else if (s.value === "typed") state.decisions.set(i, { keep: true, confirmed: true });
+    else if (s.value !== "") state.decisions.set(i, { chosen: +s.value, confirmed: true });
     changed();
   }
 
@@ -999,7 +1025,11 @@
       const out = { key: rowKey(r), raw: r.raw };
       if (d.manual) out.manual = d.manual;
       else if (d.rejected) out.rejected = true;
-      else {
+      else if (d.keep) {
+        out.keep = true;
+        out.lat = e.lat;
+        out.lon = e.lon;
+      } else {
         out.lat = e.lat;
         out.lon = e.lon;
         if (d.confirmed) out.confirmed = true;
@@ -1075,7 +1105,14 @@
         }
         if (d.manual) state.decisions.set(i, { manual: d.manual });
         else if (d.rejected) state.decisions.set(i, { rejected: true });
-        else {
+        else if (d.keep) {
+          const t = state.results[i].typed;
+          if (!t || Math.abs(t.lat - d.lat) > 1e-9 || Math.abs(t.lon - d.lon) > 1e-9) {
+            skipped++;
+            continue;
+          }
+          state.decisions.set(i, { keep: true, confirmed: true });
+        } else {
           const k = state.results[i].candidates.findIndex(c => Math.abs(c.lat - d.lat) < 1e-9 && Math.abs(c.lon - d.lon) < 1e-9);
           if (k < 0) {
             skipped++;
@@ -1378,6 +1415,12 @@
       flash(`Confirmed ${open.length} rows typed the same way — marked as checked by you`);
     });
     $("rp-table").addEventListener("change", onTableChange);
+    $("rp-keep-all").addEventListener("click", () => {
+      const list = keepableRows();
+      list.forEach(i => state.decisions.set(i, { keep: true, confirmed: true }));
+      changed();
+      flash(`Kept ${list.length} values as typed — marked as checked by you`);
+    });
     $("rp-confirm-all").addEventListener("click", () => {
       state.results.forEach((r, i) => {
         const d = state.decisions.get(i);

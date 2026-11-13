@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=5");
+      worker = new Worker("./assets/js/batch-worker.js?v=6");
     } catch (e) {
       return null;
     }

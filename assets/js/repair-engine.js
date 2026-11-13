@@ -713,6 +713,11 @@
     });
 
     results.habits = applyHabits(rows, results, preps, opts, row => unionBbox(targetFor(row)));
+    // A value typed correctly but questioned (outside the boundary): what was typed, so a
+    // person can keep it (a village on the border, or a rough boundary line).
+    results.forEach((r, i) => {
+      if (preps[i].clean && r.status !== "ok" && r.status !== "empty") r.typed = { lat: preps[i].clean.lat, lon: preps[i].clean.lon };
+    });
     return results;
   }
 
