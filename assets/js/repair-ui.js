@@ -72,6 +72,10 @@
     document.querySelectorAll(".tabs .tab-btn").forEach(b => b.classList.remove("is-active"));
     $("tab-repair").classList.add("is-active");
     $("repair-tab").style.display = "";
+    if (state.pendingDraw) {
+      state.pendingDraw = false;
+      drawBoundary();
+    }
     if (state.map) {
       setTimeout(() => {
         state.map.invalidateSize();
@@ -276,6 +280,96 @@
     return out;
   }
 
+  // Uses a boundary: src is [ { name, rings, props } ]. nameField: the attribute that holds the
+  // area names, or undefined to guess it.
+  function useBoundary(src, name, nameField) {
+    state.src = state.userSrc = src;
+    state.boundaryName = name;
+    state.features = state.userFeatures = src.map((f, i) => R.buildFeature({ rings: f.rings, props: f.props }, i));
+    state.estimated = false;
+    const keys = new Set();
+    src.forEach(f => Object.keys(f.props || {}).forEach(k => keys.add(k)));
+    state.fieldKeys = [ ...keys ];
+    const guess = nameField !== undefined && (nameField === "" || keys.has(nameField)) ? nameField :
+      state.fieldKeys.find(k => /dist|dtname|^name$|name_?2|block|region|area/i.test(k)) || state.fieldKeys.find(k => /name/i.test(k)) || "";
+    const sel = $("rp-namefield");
+    sel.innerHTML = `<option value="">No names — use polygon numbers</option>` + state.fieldKeys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+    sel.value = guess;
+    state.nameField = guess;
+    $("rp-namefield-wrap").hidden = false;
+    // The map measures itself when drawn, so a boundary restored while the tab is hidden waits.
+    if ($("repair-tab").style.display === "none") state.pendingDraw = true;
+    else drawBoundary();
+    refreshLinks();
+  }
+
+  /* ---------- the boundary, remembered on this device ---------- */
+
+  // Kept in this browser's IndexedDB (db.js), like history. Nothing is uploaded.
+  const SAVED_KEY = "cordify_boundary_v1";
+  const DB = () => window.CordifyDB;
+
+  async function saveBoundary() {
+    try {
+      if (!DB() || !await DB().ready) return false;
+      await DB().set(SAVED_KEY, { name: state.boundaryName, src: state.userSrc, nameField: state.nameField, savedAt: Date.now() });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Status line for the boundary, with a button to forget the saved one.
+  function boundaryStatus(text, kind, saved) {
+    setStatus("rp-boundary-status", text, kind);
+    if (!saved) return;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn-quiet";
+    b.textContent = "Forget it";
+    b.setAttribute("data-tip", "Removes the saved boundary from this device. Repair then estimates the area from the correct rows until you load a boundary again.");
+    b.addEventListener("click", forgetBoundary);
+    $("rp-boundary-status").append(" ", b);
+  }
+  const polygons = n => `${n} polygon${n === 1 ? "" : "s"}`;
+
+  async function restoreBoundary() {
+    if (!DB() || !await DB().ready) return;
+    let saved = null;
+    try {
+      saved = await DB().get(SAVED_KEY);
+    } catch (e) {}
+    // A file chosen while this was loading wins.
+    if (!saved || !Array.isArray(saved.src) || !saved.src.length || state.userSrc.length) return;
+    try {
+      useBoundary(saved.src, saved.name, saved.nameField);
+    } catch (e) {
+      return;
+    }
+    const when = new Date(saved.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    boundaryStatus(`Using your saved boundary “${saved.name}” (${polygons(saved.src.length)}), saved on this device on ${when}. Choose another file to replace it.`, "good", true);
+  }
+
+  async function forgetBoundary() {
+    try {
+      if (DB() && await DB().ready) await DB().del("kv", SAVED_KEY);
+    } catch (e) {}
+    state.src = state.userSrc = [];
+    state.features = state.userFeatures = [];
+    state.boundaryName = "";
+    state.nameField = "";
+    state.fieldKeys = [];
+    state.pendingDraw = false;
+    if (state.boundaryLayer) {
+      state.boundaryLayer.remove();
+      state.boundaryLayer = null;
+    }
+    $("rp-boundary").value = "";
+    $("rp-namefield-wrap").hidden = true;
+    setStatus("rp-boundary-status", "Saved boundary forgotten. Without one, Repair estimates the area from the rows that are typed correctly.");
+    refreshLinks();
+  }
+
   async function onBoundaryFile(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -285,22 +379,10 @@
       if (!src.length) {
         throw new Error("No polygons were found in this file.");
       }
-      state.src = state.userSrc = src;
-      state.boundaryName = file.name;
-      state.features = state.userFeatures = src.map((f, i) => R.buildFeature({ rings: f.rings, props: f.props }, i));
-      state.estimated = false;
-      const keys = new Set();
-      src.forEach(f => Object.keys(f.props || {}).forEach(k => keys.add(k)));
-      state.fieldKeys = [ ...keys ];
-      const guess = state.fieldKeys.find(k => /dist|dtname|^name$|name_?2|block|region|area/i.test(k)) || state.fieldKeys.find(k => /name/i.test(k)) || "";
-      const sel = $("rp-namefield");
-      sel.innerHTML = `<option value="">No names — use polygon numbers</option>` + state.fieldKeys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
-      sel.value = guess;
-      state.nameField = guess;
-      $("rp-namefield-wrap").hidden = false;
-      setStatus("rp-boundary-status", `${src.length} polygon${src.length > 1 ? "s" : ""} loaded` + (state.fieldKeys.length ? "" : " (this file has no name field — polygons are numbered)"), "good");
-      drawBoundary();
-      refreshLinks();
+      useBoundary(src, file.name);
+      const saved = await saveBoundary();
+      boundaryStatus(`${polygons(src.length)} loaded` + (state.fieldKeys.length ? "" : " (this file has no name field — polygons are numbered)") +
+        (saved ? ". Saved on this device, so it loads by itself next time." : ". It could not be saved on this device (storage full or blocked), so load it again next time."), "good", saved);
     } catch (err) {
       state.src = state.userSrc = [];
       state.features = state.userFeatures = [];
@@ -1228,9 +1310,11 @@
     if (!R || !$("repair-tab")) return;
     initAdvanced();
     $("rp-boundary").addEventListener("change", onBoundaryFile);
+    restoreBoundary();
     $("rp-namefield").addEventListener("change", e => {
       state.nameField = e.target.value;
       refreshLinks();
+      if (state.userSrc.length) saveBoundary();   // the choice of name field is remembered too
     });
     $("rp-data").addEventListener("change", onDataFile);
     $("rp-sheets").addEventListener("change", onSheetEdit);

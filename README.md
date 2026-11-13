@@ -75,6 +75,9 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   decimal point goes) are read the same way and listed together, so a whole
   habit can be checked once and confirmed with one click. Without a boundary
   file, correctly typed points near the estimated area are kept as typed.
+  A boundary you load is remembered on the device (in the browser's own
+  storage, never uploaded) and loads by itself next time; "Forget it"
+  removes it.
   The Excel export colours each row by its result, with a Legend sheet.
 - **Scan (Advanced mode)** — the Scan tab finds the coordinates written in
   images, PDFs and scanned pages. PDFs with real text are read exactly;
