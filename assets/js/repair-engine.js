@@ -26,6 +26,9 @@
   const VILLAGE_MIN_POINTS = 3;
   const CLEAR_WIN = 2.5;           // best reading this much cheaper than the next = clear winner
   const FAR_FROM_VILLAGE_KM = 10;
+  const ESTIMATE_TRUST_KM = 30;    // no boundary file: a correctly typed point this close to the estimated area is kept
+  const HABIT_MIN_ROWS = 3;        // rows typed the same way before their common reading is used for all of them
+  const HABIT_SHARE = 0.5;         // ...and the share of them that must already read best that way
 
   /* ---------- text clean-up ---------- */
 
@@ -399,6 +402,11 @@
     return 2 * R * Math.asin(Math.sqrt(a));
   }
 
+  // Distance from a point to a box [minLon, minLat, maxLon, maxLat]; 0 inside.
+  function kmToBox(lat, lon, b) {
+    return km(lat, lon, Math.min(b[3], Math.max(b[1], lat)), Math.min(b[2], Math.max(b[0], lon)));
+  }
+
   function unionBbox(features) {
     const b = [ Infinity, Infinity, -Infinity, -Infinity ];
     for (const f of features) {
@@ -471,7 +479,8 @@
       }
       for (const la of lats) {
         for (const lo of lons) {
-          const mismatch = la.format !== lo.format ? 0.5 : 0;
+          // Both values of a pair are almost always typed the same way.
+          const mismatch = la.format !== lo.format ? 1 : 0;
           const notes = baseNotes.concat(a.note ? [ a.note ] : [], la.notes.map(t => "lat: " + t), lo.notes.map(t => "lon: " + t));
           if (la.format !== "DD" || lo.format !== "DD") {
             notes.push(`read as ${la.format === lo.format ? la.format : la.format + " / " + lo.format}`);
@@ -544,10 +553,13 @@
   /*
    * rows: [{ id, text } or { id, latText, lonText }, with optional group, village]
    * opts: { features: built features, groupFeatures: { group: [featureIndex...] } | null,
-   *         digitFix: true }
+   *         digitFix: true, estimated: true when the features were guessed by estimateAreas
+   *         rather than given as a boundary file }
    * Returns one result per row:
    *   { id, status: ok|fixed|choose|outside|failed|empty, lat, lon, confidence,
    *     notes[], candidates[], chosen }
+   * plus results.habits: groups of rows typed the same way that were read one common way
+   *   [ { group, pattern, rows: [index...], signature, example, n } ]
    */
   function repairRows(rows, opts) {
     const features = opts.features;
@@ -595,6 +607,16 @@
         const f = featureAt(target, prep.clean.lon, prep.clean.lat);
         if (f) {
           Object.assign(res, { status: "ok", lat: prep.clean.lat, lon: prep.clean.lon, confidence: 100, notes: [], candidates: [ { ...prep.clean, feature: f.index } ], chosen: 0 });
+          return res;
+        }
+        // No boundary file: the area is only a guess from the other rows, so a correctly
+        // typed point just outside it is kept as typed. Far-away ones still get suggestions.
+        const off = opts.estimated ? kmToBox(prep.clean.lat, prep.clean.lon, bbox) : Infinity;
+        if (off <= ESTIMATE_TRUST_KM) {
+          Object.assign(res, {
+            status: "ok", lat: prep.clean.lat, lon: prep.clean.lon, confidence: 90, candidates: [ { ...prep.clean, feature: -1 } ], chosen: 0,
+            notes: [ `typed correctly, ${off.toFixed(0)} km outside the estimated area — kept as typed (no boundary file was given)` ]
+          });
           return res;
         }
         // Typed correctly, agrees with its village, but outside: never move it.
@@ -686,8 +708,98 @@
       } else if (cands.length > 1) {
         res.notes.push(`${cands.length - 1} other reading${cands.length > 2 ? "s" : ""} possible, clearly less likely`);
       }
+      res.wasValid = wasValid;
+      res.far = far;
+    });
+
+    results.habits = applyHabits(rows, results, preps, opts, row => unionBbox(targetFor(row)));
+    // A value typed correctly but questioned (outside the boundary): what was typed, so a
+    // person can keep it (a village on the border, or a rough boundary line).
+    results.forEach((r, i) => {
+      if (preps[i].clean && r.status !== "ok" && r.status !== "empty") r.typed = { lat: preps[i].clean.lat, lon: preps[i].clean.lon };
     });
     return results;
+  }
+
+  // What a reading did, without the parts that differ from row to row.
+  const signatureOf = c => c ? c.notes.filter(n => !/km from|possible|other reading|confirm this correction/.test(n)).join("|") : "";
+
+  /*
+   * Pass 4: rows typed the same way (same pattern, same group) were almost always typed
+   * by one person with one habit, e.g. ' where the decimal point goes. When most of
+   * them already read best one way, read the others that way too, so a typing habit
+   * is decided once instead of row by row. Nothing becomes "ok": these still need checking.
+   * With an estimated area (no boundary file), a row of the habit whose reading lands just
+   * outside the area (within ESTIMATE_TRUST_KM) is read the same way too.
+   */
+  function applyHabits(rows, results, preps, opts, bboxOf) {
+    const groups = new Map(), others = new Map();
+    const keyOf = i => `${rows[i].group ?? ""}\u0000${patternOf(rows[i])}`;
+    results.forEach((r, i) => {
+      const into = r.status === "fixed" || r.status === "choose" ? groups : r.status === "failed" && preps[i].parts && !preps[i].clean ? others : null;
+      if (!into) return;
+      const key = keyOf(i);
+      if (!into.has(key)) into.set(key, []);
+      into.get(key).push(i);
+    });
+    const habits = [];
+    for (const [ key, list ] of groups) {
+      if (list.length < HABIT_MIN_ROWS) continue;
+      const best = new Map();
+      for (const i of list) {
+        const s = signatureOf(results[i].candidates[results[i].chosen]);
+        best.set(s, (best.get(s) || 0) + 1);
+      }
+      const [ sig, n ] = [ ...best ].sort((a, b) => b[1] - a[1])[0];
+      if (!sig || n < HABIT_MIN_ROWS || n < list.length * HABIT_SHARE) continue;
+      const members = [];
+      // Rows of the habit with no reading inside an estimated area: read the habit's way if
+      // that lands just outside it. Their only candidates may be unlikely ones (a changed digit).
+      const outsideReading = i => {
+        if (!opts.estimated || preps[i].clean) return null;
+        const bbox = bboxOf(rows[i]);
+        let best = null;
+        for (const p of pairsFor(preps[i], null)) {
+          if (signatureOf(p) !== sig || (best && p.cost >= best.cost)) continue;
+          const off = kmToBox(p.lat, p.lon, bbox);
+          if (off <= ESTIMATE_TRUST_KM) best = { ...p, feature: -1, offKm: off };
+        }
+        return best;
+      };
+      for (const i of list.concat(others.get(key) || [])) {
+        const res = results[i];
+        let k = res.candidates.findIndex(c => signatureOf(c) === sig);
+        if (k < 0) {
+          const c = outsideReading(i);
+          if (!c) continue;
+          res.candidates = [ c ].concat(res.candidates.filter(x => !x.digitFix));
+          res.chosen = -1;    // set below, with its notes
+          res.wasValid = false;
+          if (res.status === "failed") res.status = "choose";
+          k = 0;
+        }
+        members.push(i);
+        const c = res.candidates[k];
+        if (k !== res.chosen) {
+          res.chosen = k;
+          res.lat = c.lat;
+          res.lon = c.lon;
+          res.notes = (res.wasValid ? [ "the original value looks valid but is outside the boundary — confirm this correction" ] : []).concat(c.notes);
+        }
+        if (c.offKm != null) res.notes.push(`${c.offKm.toFixed(1)} km outside the estimated area`);
+        res.notes.push(`read the same way as ${n - (list.includes(i) && k === 0 ? 1 : 0)} other rows typed like this`);
+        // One clear habit is as good as one clear reading — unless the value was valid,
+        // needed a changed digit, or lands far from its village.
+        const far = c.distKm != null && c.distKm > FAR_FROM_VILLAGE_KM;
+        if (res.status === "choose" && !res.wasValid && !c.digitFix && !far) {
+          res.status = "fixed";
+        }
+        res.confidence = Math.max(res.confidence, Math.min(80, Math.round(40 + 40 * n / list.length) - (far ? 20 : 0)));
+      }
+      const [ group, pattern ] = key.split("\u0000");
+      habits.push({ group, pattern, rows: members, signature: sig, example: members[0], n: members.length });
+    }
+    return habits.sort((a, b) => b.n - a.n);
   }
 
   /*
@@ -805,10 +917,13 @@
       const s = a.slice().sort((x, y) => x - y);
       return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))];
     };
+    // The middle 80% of the clean points, so a few mistyped-but-valid values (29.8 for 26.8)
+    // can't stretch it, then padded generously (at least 0.15°, about 16 km) so real points
+    // at the edge of the district are not cut off.
     const box = pts => {
       const la = pts.map(p => p.lat), lo = pts.map(p => p.lon);
-      let b = [ pct(lo, 0.05), pct(la, 0.05), pct(lo, 0.95), pct(la, 0.95) ];
-      const padX = Math.max(0.05, (b[2] - b[0]) * 0.2), padY = Math.max(0.05, (b[3] - b[1]) * 0.2);
+      let b = [ pct(lo, 0.1), pct(la, 0.1), pct(lo, 0.9), pct(la, 0.9) ];
+      const padX = Math.max(0.15, (b[2] - b[0]) * 0.75), padY = Math.max(0.15, (b[3] - b[1]) * 0.75);
       b = [ b[0] - padX, b[1] - padY, b[2] + padX, b[3] + padY ];
       return [ [ [ b[0], b[1] ], [ b[2], b[1] ], [ b[2], b[3] ], [ b[0], b[3] ], [ b[0], b[1] ] ] ];
     };
@@ -838,6 +953,6 @@
 
   return {
     patternOf, formatDMS, formatDDM, formatDD, estimateAreas, normalizeText, cleanText, splitCell, parsePart, readings, prepareRow, pairsFor,
-    buildFeature, contains, featureAt, km, repairRows, learnGroupFeatures
+    buildFeature, contains, featureAt, km, kmToBox, repairRows, learnGroupFeatures, signatureOf
   };
 });

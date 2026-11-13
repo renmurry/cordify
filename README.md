@@ -38,6 +38,14 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   CSV files over 5 MB are never loaded whole: they are read from disk a piece
   at a time (a million rows takes a few seconds) and downloaded as CSV. The
   preview scrolls through every row, and "Show on map" plots the result.
+  Rows that converted but deserve a second look are marked "OK - check" with
+  the reason in a Convert_Check column: far from the other points in the sheet
+  (often a mistyped degree, such as 29.8 for 26.8), the same position as
+  another row, or typed much more roughly than the rest of the sheet. When a
+  whole sheet is typed roughly (25.811 is only good to about 100 m), that is
+  said once for the sheet instead of marking every row.
+  The Excel download colours each row: green converted, orange worth
+  checking, red not converted, with a Legend sheet.
   For GIS software the converted points can also be saved as GeoPackage
   (opens directly in QGIS, coordinate system included), GeoJSON, KML or GPX.
 - **History** — every conversion is saved locally in your browser (in
@@ -63,6 +71,16 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   While reviewing you can place a point by clicking the map, see flags for
   duplicate points and points far from their village, and save your progress
   to a small file to continue later.
+  Rows typed the same way (the same "typing habit", such as ' where the
+  decimal point goes) are read the same way and listed together, so a whole
+  habit can be checked once and confirmed with one click. Without a boundary
+  file, correctly typed points near the estimated area are kept as typed.
+  A boundary you load is remembered on the device (in the browser's own
+  storage, never uploaded) and loads by itself next time; "Forget it"
+  removes it. A value typed correctly but outside the boundary (a village on
+  the border, or a rough boundary line) can be kept as typed: per row, or in
+  one click for all such values that sit with other points of their village.
+  The Excel export colours each row by its result, with a Legend sheet.
 - **Scan (Advanced mode)** — the Scan tab finds the coordinates written in
   images, PDFs and scanned pages. PDFs with real text are read exactly;
   scanned pages and photos are read with OCR (printed text reads well,
@@ -114,6 +132,7 @@ assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
 assets/js/batch.js       Batch convert (Convert tab): the screen
 assets/js/batch-core.js  Batch convert: reading rows, finding columns, CSV (no UI; also runs in Node)
 assets/js/batch-worker.js Batch convert: background worker that does the converting
+assets/js/xlsx-color.js  Adds row colours and a Legend sheet to Excel exports (no UI)
 assets/js/geo-io.js      Reads GeoJSON/KML/GPX, writes GeoJSON/KML/GPX/GeoPackage (no UI)
 assets/js/scan-core.js   Finds coordinates in ordinary text (no UI; also runs in Node)
 assets/js/scan.js        Scan tab: reads images and PDFs, review, add to a sheet
@@ -125,6 +144,7 @@ tests/history.test.html  Browser test page for the history store
 tests/core.test.js       Converter and projection tests
 tests/batch-core.test.js Batch reading and CSV tests
 tests/geo-io.test.js     GIS format tests
+tests/xlsx-color.test.js Excel colour tests
 tests/scan-core.test.js  Coordinate-finding tests
 tests/repair-engine.test.js  Repair tests
 package.json             Test tooling only (the app needs no install)

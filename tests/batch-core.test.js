@@ -71,11 +71,50 @@ for (const size of [ 1, 3, 7, 1000 ]) {
 
 const f = { dd: true, dms: true, ddm: false, ddDigits: 9, secDigits: 2, minDigits: 4, grid: true };
 let cols = B.outCols({ lat: 26.923417123, lon: 95.034528456 }, f, B.gridCells("utm"));
-expect("output columns in order", same(cols.map(c => c[0]), [ "Lat_DD", "Lon_DD", "Lat_DMS", "Lon_DMS", "Easting", "Northing", "Grid", "Convert_Status" ]), cols);
+expect("output columns in order", same(cols.map(c => c[0]), [ "Lat_DD", "Lon_DD", "Lat_DMS", "Lon_DMS", "Easting", "Northing", "Grid", "Convert_Status", "Convert_Check" ]), cols);
 expect("output values", cols[0][1] === 26.923417123 && cols[2][1] === "26° 55' 24.30\" N" && cols[4][1] === 702017.909 && cols[6][1] === "UTM zone 46N (EPSG:32646)" && cols[7][1] === "OK", cols);
 cols = B.outCols({ error: "latitude is missing" }, f, B.gridCells("utm"));
 expect("a failed row has empty cells and the reason", cols.slice(0, 7).every(c => c[1] === "") && cols[7][1] === "Not converted: latitude is missing", cols);
-expect("an empty row says Empty", B.outCols({ empty: true }, { dd: true, ddDigits: 6 }, null).pop()[1] === "Empty");
+expect("an empty row says Empty", B.outCols({ empty: true }, { dd: true, ddDigits: 6 }, null).find(c => c[0] === "Convert_Status")[1] === "Empty");
+cols = B.outCols({ lat: 26.9, lon: 95, check: "same position as row 4" }, { dd: true, ddDigits: 6 }, null);
+expect("a row worth checking says so in both status columns", cols.find(c => c[0] === "Convert_Status")[1] === "OK - check" && cols.find(c => c[0] === "Convert_Check")[1] === "same position as row 4", cols);
+expect("colour of a row", B.kindOf({ lat: 1, lon: 2 }) === "ok" && B.kindOf({ lat: 1, lon: 2, check: "x" }) === "check" && B.kindOf({ error: "x" }) === "bad" && B.kindOf({ empty: true }) === null);
+
+/* ---------- how finely a value was typed ---------- */
+
+const m = t => Math.round(B.precisionOf(t));
+expect("precision: decimal degrees", m("25.811") === 111 && m("26.923417") === 0 && m("26") === 111320 && m("26.3193 N") === 11, [ m("25.811"), m("26.3193 N") ]);
+expect("precision: degrees + decimal minutes", m("26°41.451'") === 2 && m("26°41'") === 1855);
+expect("precision: degrees, minutes, seconds", m("26°55'24.3\"") === 3 && m("26 55 24") === 31);
+r = B.readRow([ "A", "25.811", "94.84" ], two);
+expect("a row reports its coarser value", Math.round(r.precision) === 1113, r);
+r = B.readRow([ "26.923417, 95.034528" ], one);
+expect("a one-column pair reports its precision too", Math.round(r.precision) === 0 && r.lat === 26.923417, r);
+
+/* ---------- converted rows worth checking ---------- */
+
+// A district-sized cloud of points around 26.9, 95.0, plus three that are not right.
+const pts = [];
+for (let i = 0; i < 40; i++) pts.push([ 26.9 + Math.sin(i * 1.7) * 0.15, 95.0 + Math.cos(i * 2.3) * 0.15, 1 ]);
+pts.push([ 29.84, 94.84, 1 ]);                    // 40: mistyped degree, about 330 km away
+pts.push([ pts[3][0], pts[3][1], 1 ]);            // 41: same position as row index 3
+pts.push([ 26.95, 95.05, 1113 ]);                 // 42: typed to 2 decimals
+pts.push([ 0, 0, NaN ]);                          // 43: not converted
+const status = Uint8Array.from(pts.map((p, i) => i === 43 ? B.FAILED : B.OK));
+const checks = B.qualityChecks(pts.map(p => p[0]), pts.map(p => p[1]), status, pts.map(p => p[2]), pts.map((p, i) => i + 2));
+expect("a point hundreds of km off is flagged", /far from the other points: about 3\d\d km/.test(checks.get(40) || ""), checks.get(40));
+expect("a repeated position names the first row", checks.get(41) === "same position as row 5", checks.get(41));
+expect("a coarse value is flagged with its size", checks.get(42) === "low precision: typed to about 1 km", checks.get(42));
+expect("nothing else is flagged, and failed rows are ignored", checks.size === 3 && !checks.has(43), [ ...checks.keys() ]);
+expect("a sheet typed finely has no sheet-wide note", checks.coarse === undefined);
+// A sheet where every value has 3 decimals: one note for the sheet, not a mark on every row.
+const rough = B.qualityChecks(pts.slice(0, 40).map(p => p[0]), pts.slice(0, 40).map(p => p[1]), new Uint8Array(40).fill(B.OK),
+  pts.slice(0, 40).map((p, i) => i === 7 ? 111320 : i === 9 ? 1113.2 : 111.32), pts.slice(0, 40).map((p, i) => i + 2));
+expect("a coarse sheet gets one note", Math.round(rough.coarse) === 111 && B.nice(rough.coarse) === "100 m", rough.coarse);
+expect("...and only a row much coarser than the rest is marked", rough.size === 1 && rough.get(7) === "low precision: typed to about 100 km", [ ...rough ]);
+expect("...not one digit short, which is usually a zero Excel dropped (25.810 -> 25.81)", !rough.has(9));
+const few = B.qualityChecks([ 26.9, 29.8 ], [ 95, 94.8 ], Uint8Array.from([ B.OK, B.OK ]), null, [ 2, 3 ]);
+expect("too few points to judge distance: no far flags", few.size === 0);
 
 console.log(`\nbatch-core: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -72,6 +72,10 @@
     document.querySelectorAll(".tabs .tab-btn").forEach(b => b.classList.remove("is-active"));
     $("tab-repair").classList.add("is-active");
     $("repair-tab").style.display = "";
+    if (state.pendingDraw) {
+      state.pendingDraw = false;
+      drawBoundary();
+    }
     if (state.map) {
       setTimeout(() => {
         state.map.invalidateSize();
@@ -276,6 +280,96 @@
     return out;
   }
 
+  // Uses a boundary: src is [ { name, rings, props } ]. nameField: the attribute that holds the
+  // area names, or undefined to guess it.
+  function useBoundary(src, name, nameField) {
+    state.src = state.userSrc = src;
+    state.boundaryName = name;
+    state.features = state.userFeatures = src.map((f, i) => R.buildFeature({ rings: f.rings, props: f.props }, i));
+    state.estimated = false;
+    const keys = new Set();
+    src.forEach(f => Object.keys(f.props || {}).forEach(k => keys.add(k)));
+    state.fieldKeys = [ ...keys ];
+    const guess = nameField !== undefined && (nameField === "" || keys.has(nameField)) ? nameField :
+      state.fieldKeys.find(k => /dist|dtname|^name$|name_?2|block|region|area/i.test(k)) || state.fieldKeys.find(k => /name/i.test(k)) || "";
+    const sel = $("rp-namefield");
+    sel.innerHTML = `<option value="">No names — use polygon numbers</option>` + state.fieldKeys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
+    sel.value = guess;
+    state.nameField = guess;
+    $("rp-namefield-wrap").hidden = false;
+    // The map measures itself when drawn, so a boundary restored while the tab is hidden waits.
+    if ($("repair-tab").style.display === "none") state.pendingDraw = true;
+    else drawBoundary();
+    refreshLinks();
+  }
+
+  /* ---------- the boundary, remembered on this device ---------- */
+
+  // Kept in this browser's IndexedDB (db.js), like history. Nothing is uploaded.
+  const SAVED_KEY = "cordify_boundary_v1";
+  const DB = () => window.CordifyDB;
+
+  async function saveBoundary() {
+    try {
+      if (!DB() || !await DB().ready) return false;
+      await DB().set(SAVED_KEY, { name: state.boundaryName, src: state.userSrc, nameField: state.nameField, savedAt: Date.now() });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Status line for the boundary, with a button to forget the saved one.
+  function boundaryStatus(text, kind, saved) {
+    setStatus("rp-boundary-status", text, kind);
+    if (!saved) return;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn-quiet";
+    b.textContent = "Forget it";
+    b.setAttribute("data-tip", "Removes the saved boundary from this device. Repair then estimates the area from the correct rows until you load a boundary again.");
+    b.addEventListener("click", forgetBoundary);
+    $("rp-boundary-status").append(" ", b);
+  }
+  const polygons = n => `${n} polygon${n === 1 ? "" : "s"}`;
+
+  async function restoreBoundary() {
+    if (!DB() || !await DB().ready) return;
+    let saved = null;
+    try {
+      saved = await DB().get(SAVED_KEY);
+    } catch (e) {}
+    // A file chosen while this was loading wins.
+    if (!saved || !Array.isArray(saved.src) || !saved.src.length || state.userSrc.length) return;
+    try {
+      useBoundary(saved.src, saved.name, saved.nameField);
+    } catch (e) {
+      return;
+    }
+    const when = new Date(saved.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    boundaryStatus(`Using your saved boundary “${saved.name}” (${polygons(saved.src.length)}), saved on this device on ${when}. Choose another file to replace it.`, "good", true);
+  }
+
+  async function forgetBoundary() {
+    try {
+      if (DB() && await DB().ready) await DB().del("kv", SAVED_KEY);
+    } catch (e) {}
+    state.src = state.userSrc = [];
+    state.features = state.userFeatures = [];
+    state.boundaryName = "";
+    state.nameField = "";
+    state.fieldKeys = [];
+    state.pendingDraw = false;
+    if (state.boundaryLayer) {
+      state.boundaryLayer.remove();
+      state.boundaryLayer = null;
+    }
+    $("rp-boundary").value = "";
+    $("rp-namefield-wrap").hidden = true;
+    setStatus("rp-boundary-status", "Saved boundary forgotten. Without one, Repair estimates the area from the rows that are typed correctly.");
+    refreshLinks();
+  }
+
   async function onBoundaryFile(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -285,22 +379,10 @@
       if (!src.length) {
         throw new Error("No polygons were found in this file.");
       }
-      state.src = state.userSrc = src;
-      state.boundaryName = file.name;
-      state.features = state.userFeatures = src.map((f, i) => R.buildFeature({ rings: f.rings, props: f.props }, i));
-      state.estimated = false;
-      const keys = new Set();
-      src.forEach(f => Object.keys(f.props || {}).forEach(k => keys.add(k)));
-      state.fieldKeys = [ ...keys ];
-      const guess = state.fieldKeys.find(k => /dist|dtname|^name$|name_?2|block|region|area/i.test(k)) || state.fieldKeys.find(k => /name/i.test(k)) || "";
-      const sel = $("rp-namefield");
-      sel.innerHTML = `<option value="">No names — use polygon numbers</option>` + state.fieldKeys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
-      sel.value = guess;
-      state.nameField = guess;
-      $("rp-namefield-wrap").hidden = false;
-      setStatus("rp-boundary-status", `${src.length} polygon${src.length > 1 ? "s" : ""} loaded` + (state.fieldKeys.length ? "" : " (this file has no name field — polygons are numbered)"), "good");
-      drawBoundary();
-      refreshLinks();
+      useBoundary(src, file.name);
+      const saved = await saveBoundary();
+      boundaryStatus(`${polygons(src.length)} loaded` + (state.fieldKeys.length ? "" : " (this file has no name field — polygons are numbered)") +
+        (saved ? ". Saved on this device, so it loads by itself next time." : ". It could not be saved on this device (storage full or blocked), so load it again next time."), "good", saved);
     } catch (err) {
       state.src = state.userSrc = [];
       state.features = state.userFeatures = [];
@@ -583,7 +665,7 @@
     setStatus("rp-run-status", "Repairing…");
     setTimeout(() => {
       const t = performance.now();
-      state.results = R.repairRows(state.rows, { features: state.features, groupFeatures, digitFix: $("rp-digitfix").checked });
+      state.results = R.repairRows(state.rows, { features: state.features, groupFeatures, digitFix: $("rp-digitfix").checked, estimated: state.estimated });
       state.decisions = new Map();
       state.page = 0;
       state.filter = "all";
@@ -606,6 +688,9 @@
     if (d && d.rejected) {
       return { status: "rejected", lat: null, lon: null, cand: null, res };
     }
+    if (d && d.keep && res.typed) {
+      return { status: "confirmed", lat: res.typed.lat, lon: res.typed.lon, cand: null, res, kept: true };
+    }
     const k = d && d.chosen != null ? d.chosen : res.chosen;
     const cand = k >= 0 ? res.candidates[k] : null;
     const lat = cand ? cand.lat : res.lat, lon = cand ? cand.lon : res.lon;
@@ -615,6 +700,7 @@
 
   function noteFor(i) {
     const e = effective(i);
+    if (e.kept) return "kept as typed by you, although it is outside the boundary";
     if (e.status === "confirmed") return "checked by you" + (e.cand && e.cand.notes.length ? " — " + e.cand.notes.filter(n => !/^read as/.test(n)).join("; ") : "");
     if (e.status === "rejected") return "rejected by you";
     if (e.status === "placed") return "placed by hand on the map" + (e.manual.inside ? "" : " — outside the boundary");
@@ -683,6 +769,9 @@
   function filtered() {
     const f = state.filter;
     const out = [];
+    if (f === "habit") {
+      return habitOpen(state.results.habits[state.habitShown]).map(x => x[0]);
+    }
     state.results.forEach((r, i) => {
       const s = effective(i).status;
       if (f === "flag") {
@@ -694,8 +783,40 @@
     return out;
   }
 
+  const FORMAT_NAME = { DD: "decimal degrees", DDM: "degrees + decimal minutes", DMS: "degrees, minutes, seconds" };
+  // "lat: ' read as decimal point|lon: ' read as decimal point|read as DDM" -> plain words
+  function describeHabit(sig) {
+    const parts = [ ...new Set(sig.split("|").filter(Boolean).map(n => n.replace(/^(lat|lon): /, ""))) ];
+    return parts.map(p => p.replace(/^read as (.+)$/, (m, f) => "read as " + f.split(" / ").map(x => FORMAT_NAME[x] || x).join(" / "))).join(", ");
+  }
+  // Rows of a habit that still wait for a decision, with the reading the habit gives each.
+  function habitOpen(h) {
+    const out = [];
+    for (const i of h.rows) {
+      const d = state.decisions.get(i);
+      if (d && (d.confirmed || d.rejected || d.manual)) continue;
+      const k = state.results[i].candidates.findIndex(c => R.signatureOf(c) === h.signature);
+      if (k >= 0) out.push([ i, k ]);
+    }
+    return out;
+  }
+  function renderHabits() {
+    const box = $("rp-habits");
+    const habits = (state.results.habits || []).map((h, n) => ({ h, n, open: habitOpen(h) })).filter(x => x.open.length);
+    box.hidden = !habits.length;
+    if (!habits.length) return;
+    box.innerHTML = `<h3>Typing habits <span class="hint">Rows typed the same way are read the same way. Check one example, then confirm them all at once.</span></h3>` +
+      habits.map(({ h, n, open }) => {
+        const [ i, k ] = open[0], c = state.results[i].candidates[k], row = state.rows[i];
+        return `<div class="rp-habit"><div><b>${esc(h.group || row.sheet)}: ${open.length} row${open.length === 1 ? "" : "s"}</b> typed like <code>${esc(row.raw.replace(/\n/g, " ⏎ "))}</code>
+          → <b class="num">${fmt(c.lat)}, ${fmt(c.lon)}</b><br><span class="hint">${esc(describeHabit(h.signature))}</span></div>
+          <div class="actions"><button type="button" class="btn-quiet" data-habit-show="${n}">Show them</button><button type="button" data-habit="${n}">Confirm all ${open.length}</button></div></div>`;
+      }).join("");
+  }
+
   function renderReview() {
     computeFlags();
+    renderHabits();
     const c = counts();
     const chips = [
       [ "all", "All", state.results.length - (c.empty || 0) ],
@@ -725,6 +846,9 @@
     $("rp-confirm-all").disabled = !c.fixed;
     $("rp-guess-all").textContent = `Use best guess for all to check (${c.choose || 0})`;
     $("rp-guess-all").disabled = !c.choose;
+    const keepable = keepableRows().length;
+    $("rp-keep-all").hidden = !keepable;
+    $("rp-keep-all").textContent = `Keep values that agree with their village (${keepable})`;
   }
 
   function rowHtml(i) {
@@ -733,14 +857,18 @@
     const d = state.decisions.get(i);
     const k = d && d.chosen != null ? d.chosen : res.chosen;
     let choice = "";
-    if (res.candidates.length > 1 || res.status === "choose" || res.status === "fixed") {
+    if (res.candidates.length > 1 || res.status === "choose" || res.status === "fixed" || res.typed) {
+      const kept = !!(d && d.keep);
       choice = `<select class="rp-choose" data-i="${i}" aria-label="Choose a reading">` +
-        res.candidates.map((c, j) => `<option value="${j}"${j === k ? " selected" : ""}>${fmt(c.lat)}, ${fmt(c.lon)}${c.distKm != null ? ` · ${c.distKm.toFixed(1)} km from village` : ""}</option>`).join("") +
+        (!res.candidates.length && !(d && (d.keep || d.rejected)) ? `<option value="" selected disabled>Choose…</option>` : "") +
+        res.candidates.map((c, j) => `<option value="${j}"${j === k && !kept ? " selected" : ""}>${fmt(c.lat)}, ${fmt(c.lon)}${c.distKm != null ? ` · ${c.distKm.toFixed(1)} km from village` : ""}</option>`).join("") +
+        (res.typed ? `<option value="typed"${kept ? " selected" : ""}>As typed: ${fmt(res.typed.lat)}, ${fmt(res.typed.lon)}</option>` : "") +
         `<option value="reject"${d && d.rejected ? " selected" : ""}>None of these</option></select>`;
     }
     const similar = res.status === "choose" || res.status === "fixed" ? similarRows(i).length : 0;
     const actions = [
       (res.status === "fixed" || res.status === "choose") && !(d && (d.confirmed || d.rejected)) ? `<button type="button" class="rp-confirm" data-i="${i}" data-tip="Mark this reading as checked by you.">Confirm</button>` : "",
+      res.typed && !(d && (d.confirmed || d.rejected || d.manual)) ? `<button type="button" class="rp-keep" data-i="${i}" data-tip="Keep the value exactly as typed and mark it as checked by you. For a village on the border, or where the boundary line is rough.">Keep as typed</button>` : "",
       similar ? `<button type="button" class="btn-quiet rp-similar" data-i="${i}" data-tip="Use the same kind of correction on the other rows typed the same way, and mark them all as checked.">Same for ${similar} similar</button>` : "",
       e.status !== "empty" ? `<button type="button" class="btn-quiet rp-place" data-i="${i}" data-tip="Click on the map to set this point by hand. The map zooms to this village's other points.">${e.status === "failed" || e.status === "outside" || e.status === "rejected" ? "Place on map" : "Move"}</button>` : "",
       e.lat != null ? `<button type="button" class="btn-quiet rp-zoom" data-i="${i}" data-tip="Show this point on the map below.">Map</button>` : ""
@@ -757,6 +885,17 @@
       <td>${choice}</td>
       <td class="row-actions">${actions}</td>
     </tr>`;
+  }
+
+  // Typed correctly, outside the boundary, but sitting with other points of the same village:
+  // almost always a village on the border or a rough boundary line.
+  function keepableRows() {
+    const out = [];
+    state.results.forEach((r, i) => {
+      const d = state.decisions.get(i);
+      if (r.status === "outside" && r.typed && !(d && (d.confirmed || d.rejected || d.manual))) out.push(i);
+    });
+    return out;
   }
 
   // Rows typed the same way (same pattern), in the same group, still waiting for review.
@@ -778,7 +917,10 @@
     const b = e.target.closest("button");
     if (!b) return;
     const i = +b.dataset.i;
-    if (b.classList.contains("rp-confirm")) {
+    if (b.classList.contains("rp-keep")) {
+      state.decisions.set(i, { keep: true, confirmed: true });
+      changed();
+    } else if (b.classList.contains("rp-confirm")) {
       const d = state.decisions.get(i) || {};
       state.decisions.set(i, { ...d, confirmed: true });
       changed();
@@ -812,7 +954,8 @@
     if (!s) return;
     const i = +s.dataset.i;
     if (s.value === "reject") state.decisions.set(i, { rejected: true });
-    else state.decisions.set(i, { chosen: +s.value, confirmed: true });
+    else if (s.value === "typed") state.decisions.set(i, { keep: true, confirmed: true });
+    else if (s.value !== "") state.decisions.set(i, { chosen: +s.value, confirmed: true });
     changed();
   }
 
@@ -882,7 +1025,11 @@
       const out = { key: rowKey(r), raw: r.raw };
       if (d.manual) out.manual = d.manual;
       else if (d.rejected) out.rejected = true;
-      else {
+      else if (d.keep) {
+        out.keep = true;
+        out.lat = e.lat;
+        out.lon = e.lon;
+      } else {
         out.lat = e.lat;
         out.lon = e.lon;
         if (d.confirmed) out.confirmed = true;
@@ -958,7 +1105,14 @@
         }
         if (d.manual) state.decisions.set(i, { manual: d.manual });
         else if (d.rejected) state.decisions.set(i, { rejected: true });
-        else {
+        else if (d.keep) {
+          const t = state.results[i].typed;
+          if (!t || Math.abs(t.lat - d.lat) > 1e-9 || Math.abs(t.lon - d.lon) > 1e-9) {
+            skipped++;
+            continue;
+          }
+          state.decisions.set(i, { keep: true, confirmed: true });
+        } else {
           const k = state.results[i].candidates.findIndex(c => Math.abs(c.lat - d.lat) < 1e-9 && Math.abs(c.lon - d.lon) < 1e-9);
           if (k < 0) {
             skipped++;
@@ -1070,17 +1224,46 @@
     return copy;
   }
 
+  // Excel colour for each result: the same colours as the review table.
+  const KIND = { ok: "ok", fixed: "fixed", choose: "check", guess: "check", confirmed: "confirmed", placed: "confirmed", outside: "bad", failed: "bad", rejected: "bad" };
+  const LEGEND = [
+    [ "ok", "Green", "Unchanged: typed correctly and inside the area." ],
+    [ "fixed", "Yellow", "Corrected: one clear reading. Check it." ],
+    [ "check", "Orange", "Needs check: several readings were possible, or a best guess was used." ],
+    [ "confirmed", "Blue", "Checked by you, or placed by you on the map." ],
+    [ "bad", "Red", "Not fixed: outside the area, no reading fits, or rejected by you. The reason is in Repair_Note." ]
+  ];
+
+  async function saveColoured(out, plan, name) {
+    const C = window.CordifyXlsxColor;
+    if (!C || typeof JSZip === "undefined") return XLSX.writeFile(out, name);
+    plan.push(C.addLegend(XLSX, out, LEGEND, "When a row holds several coordinates, it takes the colour of the one that needs most attention. Rows with no colour have no coordinate. Made by Cordify."));
+    try {
+      const bytes = await C.colour(XLSX.write(out, { type: "array", bookType: "xlsx" }), plan, JSZip);
+      download(name, new Blob([ bytes ], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    } catch (e) {
+      XLSX.writeFile(out, name);   // the same file, without colours
+    }
+  }
+
   function exportWorkbook() {
     const out = XLSX.utils.book_new();
     const f = formats();
+    const C = window.CordifyXlsxColor;
+    const worse = C ? C.worse : (a, b) => b || a;
     if (state.source === "paste") {
       const names = exportValues(0, f).cols.map(c => c[0]);
       const aoa = [ [ "Original" ].concat(names) ];
-      state.rows.forEach((r, i) => aoa.push([ noCR(r.raw) ].concat(exportValues(i, f).cols.map(c => c[1]))));
+      const rows = new Map();
+      state.rows.forEach((r, i) => {
+        aoa.push([ noCR(r.raw) ].concat(exportValues(i, f).cols.map(c => c[1])));
+        const kind = KIND[effective(i).status];
+        if (kind) rows.set(i + 2, kind);
+      });
       XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(aoa), "Repaired");
-      XLSX.writeFile(out, "cordify_repaired.xlsx");
-      return;
+      return saveColoured(out, [ { sheet: 1, header: 1, rows } ], "cordify_repaired.xlsx");
     }
+    const plan = [];
     const bySheet = new Map();
     state.rows.forEach((r, i) => {
       if (!bySheet.has(r.sheet)) bySheet.set(r.sheet, []);
@@ -1108,8 +1291,14 @@
         col += names.length;
       }
       XLSX.utils.book_append_sheet(out, XLSX.utils.aoa_to_sheet(aoa), name);
+      const rows = new Map();
+      for (const i of idx) {
+        const n = state.rows[i].rowIndex + 1;
+        rows.set(n, worse(rows.get(n), KIND[effective(i).status]));
+      }
+      plan.push({ sheet: out.SheetNames.length, header: s.h + 1, rows });
     }
-    XLSX.writeFile(out, `${state.fileName || "cordify"}_repaired.xlsx`);
+    return saveColoured(out, plan, `${state.fileName || "cordify"}_repaired.xlsx`);
   }
 
   function pointFeatures() {
@@ -1158,9 +1347,11 @@
     if (!R || !$("repair-tab")) return;
     initAdvanced();
     $("rp-boundary").addEventListener("change", onBoundaryFile);
+    restoreBoundary();
     $("rp-namefield").addEventListener("change", e => {
       state.nameField = e.target.value;
       refreshLinks();
+      if (state.userSrc.length) saveBoundary();   // the choice of name field is remembered too
     });
     $("rp-data").addEventListener("change", onDataFile);
     $("rp-sheets").addEventListener("change", onSheetEdit);
@@ -1205,7 +1396,31 @@
       }
     });
     $("rp-table").addEventListener("click", onTableClick);
+    $("rp-habits").addEventListener("click", e => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.habitShow != null) {
+        state.filter = "habit";
+        state.habitShown = +b.dataset.habitShow;
+        state.page = 0;
+        renderReview();
+        return;
+      }
+      const h = state.results.habits[+b.dataset.habit];
+      if (!h) return;
+      const open = habitOpen(h);
+      open.forEach(([ i, k ]) => state.decisions.set(i, { chosen: k, confirmed: true }));
+      if (state.filter === "habit") state.filter = "all";
+      changed();
+      flash(`Confirmed ${open.length} rows typed the same way — marked as checked by you`);
+    });
     $("rp-table").addEventListener("change", onTableChange);
+    $("rp-keep-all").addEventListener("click", () => {
+      const list = keepableRows();
+      list.forEach(i => state.decisions.set(i, { keep: true, confirmed: true }));
+      changed();
+      flash(`Kept ${list.length} values as typed — marked as checked by you`);
+    });
     $("rp-confirm-all").addEventListener("click", () => {
       state.results.forEach((r, i) => {
         const d = state.decisions.get(i);

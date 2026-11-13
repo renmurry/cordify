@@ -35,13 +35,24 @@
   const changesValue = notes => notes.filter(n => n.cost > 0).map(n => PLAIN[n.text] || n.text);
   const NOT_VALID = which => `${which} isn't a valid coordinate — check the decimal point, the ° ' " marks, and that minutes and seconds are under 60`;
 
+  // How finely one typed value was given, in metres on the ground: the size of its
+  // last digit. 25.811 -> 111 m; 26°41.451' -> 2 m; 26°55'24.3" -> 3 m.
+  const UNIT_M = [ 111320, 1855.3, 30.92 ];   // one degree, minute, second of latitude
+  function precisionOf(text) {
+    const nums = String(text ?? "").match(/\d+(?:\.\d+)?/g);
+    if (!nums) return NaN;
+    const k = Math.min(nums.length, 3);
+    const dec = (nums[k - 1].split(".")[1] || "").length;
+    return UNIT_M[k - 1] * Math.pow(10, -dec);
+  }
+
   // One value (latitude or longitude) from its own cell.
   function readOne(text, role) {
     const c = R.cleanText(text);
     const bad = changesValue(c.notes);
     if (bad.length) return { error: `looks mistyped (${bad.join(", ")})`, mistyped: true };
     const v = C.parseCoord(c.text, role);
-    if (v !== null) return { value: v };
+    if (v !== null) return { value: v, precision: precisionOf(c.text) };
     const which = role === "lat" ? "latitude" : "longitude";
     return /\d/.test(c.text) ? { error: NOT_VALID(which), mistyped: true } : { error: `${which} has no numbers` };
   }
@@ -58,7 +69,7 @@
     if (role(a) === "lon" && role(b) === "lat") [ a, b ] = [ b, a ];   // "E 94.8, N 26.2": letters decide
     const str = p => p.hemi ? `${p.text} ${p.hemi}` : p.text;
     const lat = C.parseCoord(str(a), "lat"), lon = C.parseCoord(str(b), "lon");
-    if (lat !== null && lon !== null) return { lat, lon };
+    if (lat !== null && lon !== null) return { lat, lon, precision: Math.max(precisionOf(a.text), precisionOf(b.text)) };
     if (!role(a) && !role(b) && C.parseCoord(str(b), "lat") !== null && C.parseCoord(str(a), "lon") !== null) {
       return { error: "latitude and longitude look swapped (longitude first)", mistyped: true };
     }
@@ -74,7 +85,7 @@
     if (BLANK(a) && BLANK(b)) return { empty: true };
     if (BLANK(a) || BLANK(b)) return { error: BLANK(a) ? "latitude is missing" : "longitude is missing" };
     const la = readOne(String(a), "lat"), lo = readOne(String(b), "lon");
-    if (la.value !== undefined && lo.value !== undefined) return { lat: la.value, lon: lo.value };
+    if (la.value !== undefined && lo.value !== undefined) return { lat: la.value, lon: lo.value, precision: Math.max(la.precision, lo.precision) };
     // Swapped columns?
     const sa = readOne(String(b), "lat"), so = readOne(String(a), "lon");
     if (sa.value !== undefined && so.value !== undefined) return { error: "latitude and longitude look swapped (columns the wrong way round?)", mistyped: true };
@@ -84,6 +95,65 @@
   const statusOf = res => res.empty ? EMPTY : res.lat !== undefined ? OK : res.mistyped ? MISTYPED : FAILED;
   // The original coordinate text of a row, as shown in the preview.
   const rawOf = (r, cfg) => cfg.mode === "one" ? String(r[cfg.one] ?? "") : `${r[cfg.lat] ?? ""}  |  ${r[cfg.lon] ?? ""}`;
+
+  /* ---------- rows that converted but deserve a second look ---------- */
+
+  const OUTLIER_MIN_KM = 25;      // never call a point "far" if it is closer than this
+  const OUTLIER_SPREAD = 6;       // ...or closer than this many times the typical distance
+  const COARSE_M = 50;            // values given more coarsely than this are flagged
+
+  const nice = m => m >= 1000 ? `${+(m / 1000).toPrecision(1)} km` : `${+m.toPrecision(1)} m`;
+  function kmBetween(lat1, lon1, lat2, lon2) {
+    const r = Math.PI / 180, dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(a));
+  }
+  const medianOf = a => {
+    const s = Float64Array.from(a).sort(), m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+
+  /*
+   * Converted rows that are worth checking, without changing any value:
+   *   far       much further from the middle of the sheet's points than the rest (often a mistyped digit)
+   *   duplicate exactly the same position as another row
+   *   coarse    typed too roughly to place a point well (3 decimals of a degree is about 100 m)
+   * lat, lon, status, precision: one entry per row (typed arrays are fine); rowNo: the row
+   * number to show for each. Returns Map(row index -> "reason; reason").
+   * When most of the sheet is typed coarsely, that is one fact about the sheet, not a reason
+   * to mark every row: the Map then carries .coarse (the typical size, in metres) and only
+   * rows much coarser than the rest are marked.
+   */
+  function qualityChecks(lat, lon, status, precision, rowNo) {
+    const out = new Map();
+    const add = (i, text) => out.set(i, out.has(i) ? `${out.get(i)}; ${text}` : text);
+    const ok = [];
+    for (let i = 0; i < status.length; i++) if (status[i] === OK) ok.push(i);
+    if (ok.length >= 5) {
+      const cLat = medianOf(ok.map(i => lat[i])), cLon = medianOf(ok.map(i => lon[i]));
+      const d = ok.map(i => kmBetween(lat[i], lon[i], cLat, cLon));
+      const limit = Math.max(OUTLIER_MIN_KM, OUTLIER_SPREAD * medianOf(d));
+      ok.forEach((i, k) => {
+        if (d[k] > limit) add(i, `far from the other points: about ${Math.round(d[k])} km from the middle of this sheet`);
+      });
+    }
+    const seen = new Map();
+    for (const i of ok) {
+      const key = `${lat[i].toFixed(7)},${lon[i].toFixed(7)}`;
+      if (seen.has(key)) add(i, `same position as row ${rowNo[seen.get(key)]}`);
+      else seen.set(key, i);
+    }
+    if (precision) {
+      const known = ok.filter(i => precision[i] > 0);
+      const typical = known.length ? medianOf(known.map(i => precision[i])) : 0;
+      if (typical > COARSE_M) out.coarse = typical;
+      // 20 times rougher than the rest: two digits fewer, not one. Excel stores 25.810 as the
+      // number 25.81, so one digit fewer than the rest of the sheet is usually a dropped zero.
+      const limit = Math.max(COARSE_M, typical * 20);
+      for (const i of known) if (precision[i] > limit) add(i, `low precision: typed to about ${nice(precision[i])}`);
+    }
+    return out;
+  }
 
   /* ---------- finding the coordinate column(s) ---------- */
 
@@ -216,9 +286,14 @@
     if (f.dms) cols.push([ "Lat_DMS", ok ? C.formatDMS(res.lat, "lat", f.secDigits) : "" ], [ "Lon_DMS", ok ? C.formatDMS(res.lon, "lon", f.secDigits) : "" ]);
     if (f.ddm) cols.push([ "Lat_DDM", ok ? C.formatDDM(res.lat, "lat", f.minDigits) : "" ], [ "Lon_DDM", ok ? C.formatDDM(res.lon, "lon", f.minDigits) : "" ]);
     if (f.grid && grid) cols.push(...grid(ok ? res.lat : null, ok ? res.lon : null));
-    cols.push([ "Convert_Status", res.empty ? "Empty" : ok ? "OK" : "Not converted: " + res.error ]);
+    cols.push([ "Convert_Status", res.empty ? "Empty" : ok ? (res.check ? "OK - check" : "OK") : "Not converted: " + res.error ],
+      [ "Convert_Check", ok && res.check ? res.check : "" ]);
     return cols;
   }
+  // The two columns that describe a row rather than hold a value.
+  const STATUS_COLS = new Set([ "Convert_Status", "Convert_Check" ]);
+  // How a row is coloured in Excel: converted, converted but worth checking, not converted.
+  const kindOf = res => res.empty ? null : res.lat === undefined ? "bad" : res.check ? "check" : "ok";
 
   // Grid cells from a system spec (see core.js project): what grid.js does on the page.
   function gridCells(spec) {
@@ -232,6 +307,7 @@
 
   return {
     EMPTY, OK, FAILED, MISTYPED, BLANK, readOne, readPair, readRow, statusOf, rawOf, detect,
+    precisionOf, qualityChecks, STATUS_COLS, kindOf, nice,
     parseCsvRecord, splitCsvRecords, sniffDelimiter, csvCell, recordEnds, outCols, gridCells
   };
 });

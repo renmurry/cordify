@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=3");
+      worker = new Worker("./assets/js/batch-worker.js?v=6");
     } catch (e) {
       return null;
     }
@@ -87,16 +87,17 @@
       if (e.message !== "no-worker") throw e;
     }
     const B = BC(), n = a.length;
-    const lat = new Float64Array(n), lon = new Float64Array(n), st = new Uint8Array(n), errors = [];
+    const lat = new Float64Array(n), lon = new Float64Array(n), st = new Uint8Array(n), precision = new Float32Array(n), errors = [];
     const cfg = { mode, one: 0, lat: 0, lon: 1 };
     for (let i = 0; i < n; i++) {
       const res = B.readRow([ a[i], b ? b[i] : null ], cfg);
       st[i] = B.statusOf(res);
       lat[i] = res.lat !== undefined ? res.lat : NaN;
       lon[i] = res.lat !== undefined ? res.lon : NaN;
+      precision[i] = res.lat !== undefined ? res.precision : NaN;
       if (res.lat === undefined && !res.empty) errors.push([ i, res.error ]);
     }
-    return { lat, lon, status: st, errors };
+    return { lat, lon, status: st, precision, errors };
   }
 
   /* ---------- progress ---------- */
@@ -279,6 +280,9 @@
     $("batch-grid-label").textContent = on ? "in " + window.CordifyGrid.label() : "(choose a system at the top of this tab first)";
   }
 
+  // "Kiphire is typed to about 100 m throughout." — one note per sheet instead of a mark on every row.
+  const coarseText = list => list.map(([ n, m ]) => `${list.length > 1 || state.results?.names?.length > 1 || Object.keys(state.sheets).length > 1 ? `“${n}” is` : "Values are"} typed to only about ${BC().nice(m)} throughout.`).join(" ");
+
   function formats() {
     const f = {
       dd: $("batch-fmt-dd").checked, dms: $("batch-fmt-dms").checked, ddm: $("batch-fmt-ddm").checked,
@@ -298,7 +302,7 @@
   function resOf(set, i) {
     const st = set.status[i];
     if (st === BC().EMPTY) return { empty: true };
-    if (st === BC().OK) return { lat: set.lat[i], lon: set.lon[i] };
+    if (st === BC().OK) return { lat: set.lat[i], lon: set.lon[i], check: set.checks ? set.checks.get(i) : undefined };
     return { error: set.errors ? set.errors.get(i) || "" : "" };
   }
 
@@ -313,14 +317,16 @@
     clearResults();
     setBusy(true, "Starting…");
     const B = BC();
-    const out = { f, sets: {}, names, ok: 0, failed: 0, empty: 0, mistyped: 0 };
+    const out = { f, sets: {}, names, ok: 0, failed: 0, empty: 0, mistyped: 0, check: 0, coarse: [] };
     try {
       for (const n of names) {
         const s = state.sheets[n];
         if (s.big) {
           const m = await ask({ type: "csv", file: state.big.file, delim: state.big.delim, cfg: { mode: s.mode, one: s.one, lat: s.lat, lon: s.lon } },
             p => progress(p.done / p.total, `${count(p.rows)} rows read`));
-          out.sets[n] = { big: true, n: m.n, lat: m.lat, lon: m.lon, status: m.status, recNo: m.recNo };
+          out.sets[n] = { big: true, n: m.n, lat: m.lat, lon: m.lon, status: m.status, recNo: m.recNo, checks: new Map(m.checks) };
+          out.check += m.counts.check;
+          if (m.counts.coarse) out.coarse.push([ n, m.counts.coarse ]);
           out.ok += m.counts.ok;
           out.failed += m.counts.failed;
           out.empty += m.counts.empty;
@@ -339,7 +345,11 @@
         }
         const label = names.length > 1 ? `${n}: ` : "";
         const m = await convertColumns(s.mode, a, b, p => progress(p.done / p.total, `${label}${count(p.done)} of ${count(p.total)} rows`));
-        out.sets[n] = { n: idx.length, lat: m.lat, lon: m.lon, status: m.status, rowIndex: Int32Array.from(idx), errors: new Map(m.errors) };
+        // Converted rows worth a second look: far from the rest, duplicated, or typed too roughly.
+        const checks = B.qualityChecks(m.lat, m.lon, m.status, m.precision, idx.map(i => i + 1));
+        out.check += checks.size;
+        if (checks.coarse) out.coarse.push([ n, checks.coarse ]);
+        out.sets[n] = { n: idx.length, lat: m.lat, lon: m.lon, status: m.status, rowIndex: Int32Array.from(idx), errors: new Map(m.errors), checks };
         for (let i = 0; i < m.status.length; i++) {
           const st = m.status[i];
           if (st === B.EMPTY) out.empty++;
@@ -360,15 +370,18 @@
     const total = out.ok + out.failed;
     const msg = `Converted ${count(out.ok)} of ${count(total)} row${total === 1 ? "" : "s"}` +
       (out.failed ? ` — ${count(out.failed)} couldn't be read${out.mistyped ? ` (${count(out.mistyped)} look mistyped)` : ""}` : "") +
-      (out.empty ? `, ${count(out.empty)} empty` : "") + ".";
-    status(msg, out.failed ? (out.ok ? "warn" : "bad") : "good", out.failed > 0);
+      (out.empty ? `, ${count(out.empty)} empty` : "") + "." +
+      (out.check ? ` ${count(out.check)} converted row${out.check === 1 ? " is" : "s are"} worth checking (far from the rest, a duplicate, or typed roughly).` : "") +
+      (out.coarse.length ? ` ${coarseText(out.coarse)}` : "");
+    status(msg, out.failed || out.check ? (out.ok ? "warn" : "bad") : "good", out.failed > 0);
     const any = out.ok + out.failed > 0;
     $("batch-download-xlsx").disabled = !any || !!state.big;
     $("batch-download-xlsx").setAttribute("data-tip", state.big ? "A file this large does not fit in an Excel workbook. Download CSV instead; Excel and QGIS both open it." : XLSX_TIP);
     $("batch-download-csv").disabled = !any;
     gisButtons(!out.ok);
     $("batch-map").disabled = !out.ok;
-    $("batch-only-problems").checked = out.failed > 0 && out.ok === 0 ? false : $("batch-only-problems").checked;
+    $("batch-view").querySelector('[value="check"]').textContent = `Converted, worth checking (${count(out.check)})`;
+    $("batch-view").querySelector('[value="failed"]').textContent = `Not converted (${count(out.failed)})`;
     renderPreview();
   }
 
@@ -376,20 +389,21 @@
 
   // Row ids run through all converted sheets in order; `view` lists the ones to show.
   function buildView() {
-    const out = state.results, only = $("batch-only-problems").checked, B = BC();
+    const out = state.results, show = $("batch-view").value, B = BC();
     let base = 0, n = 0;
-    const keep = st => only ? st >= B.FAILED : st !== B.EMPTY;
+    let set = null;
+    const keep = (st, i) => show === "failed" ? st >= B.FAILED : show === "check" ? st === B.OK && set.checks && set.checks.has(i) : st !== B.EMPTY;
     for (const name of out.names) {
-      const set = out.sets[name];
+      set = out.sets[name];
       set.base = base;
-      for (let i = 0; i < set.n; i++) if (keep(set.status[i])) n++;
+      for (let i = 0; i < set.n; i++) if (keep(set.status[i], i)) n++;
       base += set.n;
     }
     view = new Int32Array(n);
     let k = 0;
     for (const name of out.names) {
-      const set = out.sets[name];
-      for (let i = 0; i < set.n; i++) if (keep(set.status[i])) view[k++] = set.base + i;
+      set = out.sets[name];
+      for (let i = 0; i < set.n; i++) if (keep(set.status[i], i)) view[k++] = set.base + i;
     }
   }
 
@@ -424,11 +438,12 @@
         raw = BC().rawOf(s.aoa[set.rowIndex[i]], s);
         rowNo = set.rowIndex[i] + 1;
       }
-      const cols = outCols(res, out.f);
+      const cols = outCols(res, out.f).filter(c => !BC().STATUS_COLS.has(c[0]));
       const ok = res.lat !== undefined;
-      return `<tr class="${ok ? "" : "batch-fail"}"><td class="hint">${multi ? esc(name) + " · " : ""}${rowNo}</td><td><pre class="raw">${esc(raw)}</pre></td>` +
-        cols.slice(0, -1).map(c => `<td class="num">${esc(c[1])}</td>`).join("") +
-        `<td>${ok ? '<span class="badge st-ok">OK</span>' : `<span class="badge st-bad">Not converted</span><br><span class="hint">${esc(res.error)}</span>`}</td></tr>`;
+      const result = !ok ? `<span class="badge st-bad">Not converted</span><br><span class="hint">${esc(res.error)}</span>` :
+        res.check ? `<span class="badge st-choose">Check</span><br><span class="hint">${esc(res.check)}</span>` : '<span class="badge st-ok">OK</span>';
+      return `<tr class="${ok ? res.check ? "batch-check" : "" : "batch-fail"}"><td class="hint">${multi ? esc(name) + " · " : ""}${rowNo}</td><td><pre class="raw">${esc(raw)}</pre></td>` +
+        cols.map(c => `<td class="num">${esc(c[1])}</td>`).join("") + `<td>${result}</td></tr>`;
     });
   }
 
@@ -440,7 +455,7 @@
     out.f = formats();
     buildView();
     const multi = out.names.length > 1;
-    const names = outCols({ empty: true }, out.f).map(c => c[0]).filter(n => n !== "Convert_Status");
+    const names = outCols({ empty: true }, out.f).map(c => c[0]).filter(n => !BC().STATUS_COLS.has(n));
     $("batch-head").innerHTML = `<th>${multi ? "Sheet · row" : "Row"}</th><th>Original</th>` + names.map(n => `<th>${esc(n.replace("_", " "))}</th>`).join("") + "<th>Result</th>";
     const small = view.length <= VISIBLE;
     // Browsers cap how tall an element can be, so a very long list scrolls proportionally.
@@ -455,8 +470,8 @@
   async function draw() {
     const out = state.results;
     if (!out) return;
-    const total = view.length, only = $("batch-only-problems").checked;
-    const cols = outCols({ empty: true }, out.f).length + 2;
+    const total = view.length, show = $("batch-view").value;
+    const cols = outCols({ empty: true }, out.f).length + 1;
     if (!total) {
       $("batch-body").innerHTML = `<tr><td colspan="${cols}" class="empty">No rows in this view.</td></tr>`;
       $("batch-preview-label").textContent = "";
@@ -476,12 +491,12 @@
     $("batch-body").innerHTML = rows.join("");
     $("batch-vt-view").classList.toggle("vt-end", total > shown && first + shown >= total);
     $("batch-preview-label").textContent = (total > shown ? `Rows ${count(first + 1)}–${count(first + shown)} of ${count(total)}` : `${count(total)} row${total === 1 ? "" : "s"}`) +
-      (only ? " that couldn't be read" : "") + (total > shown ? " — scroll the table for more" : "");
+      (show === "failed" ? " not converted" : show === "check" ? " worth checking" : "") + (total > shown ? " — scroll the table for more" : "");
   }
 
   /* ---------- download ---------- */
 
-  const XLSX_TIP = "The same workbook with the new columns added to each converted sheet. Other sheets are kept as they are.";
+  const XLSX_TIP = "The same workbook with the new columns added to each converted sheet, and rows coloured by result (a Legend sheet explains the colours). Other sheets are kept as they are.";
   const noCR = v => typeof v === "string" ? v.replace(/\r\n?/g, "\n") : v;
   function cleanSheet(ws) {
     const copy = {};
@@ -506,15 +521,38 @@
     return aoa;
   }
 
-  function downloadXlsx() {
+  // Rows are coloured by result: green converted, orange converted but worth checking,
+  // red not converted. A Legend sheet explains the colours.
+  async function downloadXlsx() {
     if (!state.results || state.big) return;
-    state.results.f = formats();
-    const wb = XLSX.utils.book_new();
+    const out = state.results;
+    out.f = formats();
+    const wb = XLSX.utils.book_new(), plan = [];
     for (const name of state.workbook.SheetNames) {
-      const ws = state.results.sets[name] ? XLSX.utils.aoa_to_sheet(convertedAoa(name)) : cleanSheet(state.workbook.Sheets[name]);
-      XLSX.utils.book_append_sheet(wb, ws, name);
+      const set = out.sets[name];
+      XLSX.utils.book_append_sheet(wb, set ? XLSX.utils.aoa_to_sheet(convertedAoa(name)) : cleanSheet(state.workbook.Sheets[name]), name);
+      if (!set) continue;
+      const rows = new Map();
+      for (let i = 0; i < set.n; i++) {
+        const kind = BC().kindOf(resOf(set, i));
+        if (kind) rows.set(set.rowIndex[i] + 1, kind);
+      }
+      plan.push({ sheet: wb.SheetNames.length, header: state.sheets[name].h + 1, rows });
     }
-    XLSX.writeFile(wb, `${state.fileName || "cordify"}_converted.xlsx`);
+    const name = `${state.fileName || "cordify"}_converted.xlsx`;
+    const C = window.CordifyXlsxColor;
+    if (!C || typeof JSZip === "undefined") return XLSX.writeFile(wb, name);
+    plan.push(C.addLegend(XLSX, wb, [
+      [ "ok", "Green", "Converted (Convert_Status: OK)" ],
+      [ "check", "Orange", "Converted, but worth checking: far from the other points, the same position as another row, or typed roughly. The reason is in Convert_Check." ],
+      [ "bad", "Red", "Not converted: the reason is in Convert_Status. Badly typed values can often be fixed in Repair (Advanced mode)." ]
+    ], (out.coarse.length ? coarseText(out.coarse) + " " : "") + "Rows with no colour have no coordinate. Made by Cordify."));
+    try {
+      const bytes = await C.colour(XLSX.write(wb, { type: "array", bookType: "xlsx" }), plan, JSZip);
+      download(name, new Blob([ bytes ], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    } catch (e) {
+      XLSX.writeFile(wb, name);   // the same file, without colours
+    }
   }
 
   // CSV with a byte-order mark so Excel shows ° and other symbols correctly.
@@ -598,14 +636,14 @@
       return;
     }
     const G = window.CordifyGeoIO, OK = BC().OK, multi = out.names.length > 1;
-    const added = outCols({ empty: true }, out.f).slice(0, -1).map(c => c[0]);
+    const added = outCols({ empty: true }, out.f).filter(c => c[0] !== "Convert_Status").map(c => c[0]);
     // fn(sheet, set, original row, its number, the new cells) for every converted row
     const eachPoint = (name, fn) => {
       const s = state.sheets[name], set = out.sets[name];
       for (let i = 0; i < set.n; i++) {
         if (set.status[i] !== OK) continue;
         const res = { lat: set.lat[i], lon: set.lon[i] };
-        fn(s, s.aoa[set.rowIndex[i]], set.rowIndex[i] + 1, res, outCols(res, out.f).slice(0, -1));
+        fn(s, s.aoa[set.rowIndex[i]], set.rowIndex[i] + 1, res, outCols(res, out.f).filter(c => c[0] !== "Convert_Status"));
       }
     };
     try {
@@ -740,7 +778,7 @@
       const b = e.target.closest("button[data-fmt]");
       if (b && !b.disabled) downloadGeo(b.dataset.fmt);
     });
-    $("batch-only-problems").addEventListener("change", renderPreview);
+    $("batch-view").addEventListener("change", renderPreview);
     $("batch-vt").addEventListener("scroll", () => {
       if (!frame) {
         // A short timer, not requestAnimationFrame, which stops while the tab is in the background.
