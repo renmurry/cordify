@@ -1,5 +1,5 @@
 {
- "built": "2026-11-13T03:08:16.854Z",
+ "built": "2026-11-13T03:31:05.137Z",
  "channels": [
   {
    "id": "latest",
@@ -17,6 +17,15 @@
    "ref": "v3.3.0",
    "version": "v3.3.0",
    "commit": "9f6f669",
+   "date": "2026-11-13"
+  },
+  {
+   "id": "preview",
+   "label": "Preview",
+   "path": "preview/",
+   "ref": "4a49c1b549fd4b6c69941434d81525254633dd49",
+   "version": "4a49c1b",
+   "commit": "4a49c1b",
    "date": "2026-11-13"
   }
  ]
