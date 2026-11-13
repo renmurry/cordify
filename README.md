@@ -46,6 +46,11 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   said once for the sheet instead of marking every row.
   The Excel download colours each row: green converted, orange worth
   checking, red not converted, with a Legend sheet.
+  Rows that could not be read can be repaired right there ("Repair them
+  here"), the same way the Repair tab does it: with the boundary and
+  village locations saved in the Repair tab if there are any, otherwise
+  with an area estimated from the rows that converted. Repaired rows are
+  marked yellow (one clear reading) or orange (best guess) to check.
   For GIS software the converted points can also be saved as GeoPackage
   (opens directly in QGIS, coordinate system included), GeoJSON, KML or GPX.
 - **History** — every conversion is saved locally in your browser (in
@@ -80,6 +85,13 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   removes it. A value typed correctly but outside the boundary (a village on
   the border, or a rough boundary line) can be kept as typed: per row, or in
   one click for all such values that sit with other points of their village.
+  With no boundary file, an area can be drawn on the map; a drawn area can
+  also be added to a district (for a village just across the line). The
+  boundary in use, drawn areas included, downloads as KML.
+  A village locations file (a spreadsheet with village names and
+  coordinates, or named points in KML or GeoJSON) makes Repair prefer
+  readings near each row's own village and flag points far from it. It is
+  remembered on the device like the boundary.
   The Excel export colours each row by its result, with a Legend sheet.
 - **Scan (Advanced mode)** — the Scan tab finds the coordinates written in
   images, PDFs and scanned pages. PDFs with real text are read exactly;
@@ -132,6 +144,7 @@ assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
 assets/js/batch.js       Batch convert (Convert tab): the screen
 assets/js/batch-core.js  Batch convert: reading rows, finding columns, CSV (no UI; also runs in Node)
 assets/js/batch-worker.js Batch convert: background worker that does the converting
+assets/js/reference.js   Boundary and village locations kept on the device; reads village lists
 assets/js/xlsx-color.js  Adds row colours and a Legend sheet to Excel exports (no UI)
 assets/js/geo-io.js      Reads GeoJSON/KML/GPX, writes GeoJSON/KML/GPX/GeoPackage (no UI)
 assets/js/scan-core.js   Finds coordinates in ordinary text (no UI; also runs in Node)

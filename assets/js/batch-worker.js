@@ -10,9 +10,10 @@
  *   window   the original text of some rows of that CSV, for the preview
  *   export   write that CSV again with the new columns added
  *   exportGeo  write its converted rows as GeoJSON, KML, GPX or GeoPackage
+ *   repaired   rows the page rebuilt with Repair, so the exports include them
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=2", "repair-engine.js?v=5", "batch-core.js?v=3", "geo-io.js?v=1");
+importScripts("core.js?v=2", "repair-engine.js?v=7", "batch-core.js?v=4", "geo-io.js?v=1");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads
@@ -203,7 +204,8 @@ async function rowsWindow(m) {
     for (let q = k; q <= j; q++) {
       const i = ids[q];
       const text = decode(trimEol(buf.subarray(big.starts[i] - from, big.ends[i] - from)));
-      rows.push({ i, raw: B.rawOf(B.parseCsvRecord(text, big.delim), big.cfg), error: big.errors.get(i) || "" });
+      const fields = B.parseCsvRecord(text, big.delim), c = big.cfg;
+      rows.push({ i, raw: B.rawOf(fields, c), error: big.errors.get(i) || "", cells: c.mode === "one" ? [ fields[c.one] ] : [ fields[c.lat], fields[c.lon] ] });
     }
     k = j + 1;
   }
@@ -238,7 +240,7 @@ async function exportCsv(m) {
     }
     if (i < big.starts.length && big.starts[i] === start) {
       const st = big.status[i];
-      const res = st === B.EMPTY ? { empty: true } : st === B.OK ? { lat: big.lat[i], lon: big.lon[i], check: big.checks.get(i) } : { error: big.errors.get(i) };
+      const res = st === B.EMPTY ? { empty: true } : st === B.OK ? { lat: big.lat[i], lon: big.lon[i], check: big.checks.get(i) } : rowRepair(i);
       add(text, B.outCols(res, m.f, grid).map(c => c[1]), fields);
       i++;
     } else {
@@ -280,9 +282,10 @@ async function exportGeo(m) {
     }
     if (i >= big.starts.length || big.starts[i] !== start) return;
     const k = i++;
-    if (big.status[k] !== B.OK) return;
+    const fixed = big.status[k] !== B.OK && big.repaired ? big.repaired.get(k) : null;
+    if (big.status[k] !== B.OK && !fixed) return;
     const fields = B.parseCsvRecord(text, d);
-    const res = { lat: big.lat[k], lon: big.lon[k], check: big.checks.get(k) };
+    const res = fixed ? { ...fixed } : { lat: big.lat[k], lon: big.lon[k], check: big.checks.get(k) };
     const cols = B.outCols(res, m.f, grid).filter(c => c[0] !== "Convert_Status");
     if (isPkg) {
       tb.point(res.lat, res.lon, head.map((h, j) => fields[j]).concat(cols.map(c => c[1])));
@@ -303,6 +306,14 @@ async function exportGeo(m) {
   postMessage({ type: "exported", job: m.job, ext: w.ext, blob: new Blob(blobs, { type: w.mime }) });
 }
 
+// A row that did not convert: its repair if there is one, else the reason (and why Repair could not help).
+function rowRepair(i) {
+  const fixed = big.repaired && big.repaired.get(i);
+  if (fixed) return { ...fixed };
+  const note = big.repairNotes && big.repairNotes.get(i);
+  return { error: (big.errors.get(i) || "") + (note ? `; Repair: ${note}` : "") };
+}
+
 self.onmessage = e => {
   const m = e.data;
   const fail = err => postMessage({ type: "error", job: m.job, message: String(err && err.message || err) });
@@ -312,6 +323,13 @@ self.onmessage = e => {
     else if (m.type === "window") rowsWindow(m).catch(fail);
     else if (m.type === "export") exportCsv(m).catch(fail);
     else if (m.type === "exportGeo") exportGeo(m).catch(fail);
+    else if (m.type === "repaired") {
+      if (big) {
+        big.repaired = new Map(m.entries);
+        big.repairNotes = new Map(m.notes);
+      }
+      postMessage({ type: "ok", job: m.job });
+    }
   } catch (err) {
     fail(err);
   }

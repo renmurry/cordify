@@ -29,7 +29,8 @@
     links: {}, learned: {}, results: [], decisions: new Map(),
     filter: "all", page: 0, map: null, boundaryLayer: null, pointLayer: null,
     estimated: false, userSrc: [], userFeatures: [], boundaryName: "",
-    flags: new Map(), placing: null, dirty: false, pendingResume: null
+    flags: new Map(), placing: null, dirty: false, pendingResume: null,
+    places: null, placesList: [], placesName: "", placesLayer: null, drawing: null
   };
 
   /* ---------------- Advanced mode + tab ---------------- */
@@ -101,7 +102,10 @@
   const fmt = v => v == null ? "" : (+v).toFixed(6);
   const featureLabel = f => {
     const nm = state.nameField && f.props ? f.props[state.nameField] : null;
-    return nm ? `${nm}` : `Polygon ${f.index + 1}`;
+    if (nm) return `${nm}`;
+    // An unnamed polygon is easier to recognise by the group (sheet or district) linked to it.
+    const linked = Object.entries(state.links || {}).filter(([ , v ]) => v !== "all" && v !== "" && v != null && +v === f.index).map(([ g ]) => g);
+    return `Polygon ${f.index + 1}` + (linked.length ? ` · ${linked.join(", ")}` : "");
   };
   function download(name, blob) {
     const url = URL.createObjectURL(blob);
@@ -322,6 +326,7 @@
   // Status line for the boundary, with a button to forget the saved one.
   function boundaryStatus(text, kind, saved) {
     setStatus("rp-boundary-status", text, kind);
+    $("rp-boundary-download").hidden = !state.userSrc.length;
     if (!saved) return;
     const b = document.createElement("button");
     b.type = "button";
@@ -365,9 +370,166 @@
       state.boundaryLayer = null;
     }
     $("rp-boundary").value = "";
+    $("rp-boundary-download").hidden = true;
     $("rp-namefield-wrap").hidden = true;
     setStatus("rp-boundary-status", "Saved boundary forgotten. Without one, Repair estimates the area from the rows that are typed correctly.");
     refreshLinks();
+  }
+
+  /* ---------- village locations (optional) ---------- */
+
+  const Ref = () => window.CordifyReference;
+
+  function usePlaces(list, name) {
+    state.placesList = list;
+    state.places = R.buildPlaces(list);
+    state.placesName = name;
+    drawPlaces();
+  }
+
+  // "120 places loaded — 85 of the 90 villages in your data are in it."
+  function placesSummary() {
+    const p = state.places;
+    if (!p) return "";
+    const amb = p.ambiguous ? ` (${p.ambiguous} name${p.ambiguous === 1 ? "" : "s"} appear in two places far apart without a district, so they are left out)` : "";
+    let match = "";
+    if (state.rows && state.rows.length) {
+      const villages = new Map();
+      state.rows.forEach(r => { if (r.village) villages.set(`${r.group}|${R.placeKey(r.village)}`, r); });
+      const found = [ ...villages.values() ].filter(r => R.placeFor(p, r)).length;
+      const missing = [ ...villages.values() ].filter(r => !R.placeFor(p, r)).map(r => r.village);
+      match = villages.size ? ` ${found} of the ${villages.size} villages in your data are in it` + (missing.length ? `; not found: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? ` and ${missing.length - 6} more` : ""}` : "") + "." : "";
+    }
+    return `${state.placesList.length} place${state.placesList.length === 1 ? "" : "s"} from “${state.placesName}”${amb}.${match}`;
+  }
+  function placesStatus(prefix, kind) {
+    if (!state.places) return;
+    setStatus("rp-places-status", (prefix || "") + placesSummary(), kind || "good");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn-quiet";
+    b.textContent = "Forget it";
+    b.setAttribute("data-tip", "Removes the saved village locations from this device.");
+    b.addEventListener("click", forgetPlaces);
+    $("rp-places-status").append(" ", b);
+  }
+
+  async function onPlacesFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setStatus("rp-places-status", "Reading village locations…");
+    try {
+      const list = await Ref().readPlaces(file);
+      if (!list.length) {
+        throw new Error("No named points were found. A village locations file needs a name column (Village, Locality, Name…) and coordinates, or named points in KML / GeoJSON.");
+      }
+      usePlaces(list, file.name);
+      const saved = await Ref().savePlaces(file.name, list);
+      placesStatus(saved ? "Saved on this device. " : "Could not be saved on this device, so load it again next time. ");
+    } catch (err) {
+      setStatus("rp-places-status", err.message || "Could not read this file.", "bad");
+    }
+  }
+
+  async function restorePlaces() {
+    const saved = Ref() && await Ref().loadPlaces();
+    if (!saved || !Array.isArray(saved.list) || !saved.list.length || state.places) return;
+    usePlaces(saved.list, saved.name);
+    placesStatus("Using your saved village locations: ");
+  }
+
+  async function forgetPlaces() {
+    await Ref().forgetPlaces();
+    state.placesList = [];
+    state.places = null;
+    state.placesName = "";
+    if (state.placesLayer) {
+      state.placesLayer.remove();
+      state.placesLayer = null;
+    }
+    $("rp-places").value = "";
+    setStatus("rp-places-status", "Saved village locations forgotten.");
+  }
+
+  // Known village locations as small hollow circles, named on hover.
+  function drawPlaces() {
+    if (!state.map || typeof L === "undefined") return;
+    if (state.placesLayer) state.placesLayer.remove();
+    state.placesLayer = null;
+    if (!state.places || !state.placesList.length) return;
+    const g = L.layerGroup();
+    state.placesList.slice(0, 5000).forEach(p => L.circleMarker([ p.lat, p.lon ], { radius: 3, weight: 1.5, color: "#5b6d6a", fill: false, interactive: true })
+      .bindTooltip(esc(p.name) + (p.group ? ` · ${esc(p.group)}` : "")).addTo(g));
+    state.placesLayer = g.addTo(state.map);
+  }
+
+  /* ---------- drawing an area on the map ---------- */
+
+  function startDrawing() {
+    stopPlacing();
+    $("rp-map-wrap").hidden = false;
+    ensureMap();
+    if (!state.map) return;
+    state.map.invalidateSize();
+    state.drawing = { pts: [], layer: L.layerGroup().addTo(state.map) };
+    state.map.doubleClickZoom.disable();
+    $("rp-map").classList.add("is-placing");
+    $("rp-draw-attach").innerHTML = `<option value="">a new, separate area</option>` +
+      state.features.filter(() => state.userFeatures.length).map(f => `<option value="${f.index}">${esc(featureLabel(f))}</option>`).join("");
+    $("rp-draw-attach-wrap").hidden = !state.userFeatures.length;
+    drawingChanged();
+    $("rp-draw-bar").hidden = false;
+    $("rp-map-wrap").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  function drawingChanged() {
+    const d = state.drawing;
+    if (!d) return;
+    d.layer.clearLayers();
+    const ll = d.pts.map(p => [ p.lat, p.lng ]);
+    if (ll.length > 1) L.polygon(ll, { color: "#c62828", weight: 2, dashArray: "5 4", fillOpacity: 0.08, interactive: false }).addTo(d.layer);
+    ll.forEach(p => L.circleMarker(p, { radius: 4, color: "#c62828", fillColor: "#fff", fillOpacity: 1, weight: 2, interactive: false }).addTo(d.layer));
+    $("rp-draw-text").textContent = d.pts.length < 3 ? `Click the map to add the corners of the area (${d.pts.length} so far, at least 3).` : `${d.pts.length} corners. Keep clicking to add more, or finish.`;
+    $("rp-draw-finish").disabled = d.pts.length < 3;
+    $("rp-draw-undo").disabled = !d.pts.length;
+  }
+  function stopDrawing() {
+    if (!state.drawing) return;
+    state.drawing.layer.remove();
+    state.drawing = null;
+    state.map.doubleClickZoom.enable();
+    $("rp-map").classList.remove("is-placing");
+    $("rp-draw-bar").hidden = true;
+  }
+  async function finishDrawing() {
+    const d = state.drawing;
+    if (!d || d.pts.length < 3) return;
+    const ring = d.pts.map(p => [ p.lng, p.lat ]);
+    ring.push(ring[0]);
+    const attach = $("rp-draw-attach").value;
+    const n = (state.userSrc || []).filter(f => f.props && f.props.drawn).length + 1;
+    const name = attach !== "" ? `Added to ${featureLabel(state.features[+attach])}` : `Drawn area ${n}`;
+    const props = { name, drawn: true };
+    if (attach !== "") props.attachTo = +attach;
+    stopDrawing();
+    const src = (state.userSrc || []).concat({ name, props, rings: [ ring ] });
+    const label = !state.boundaryName ? "Drawn on the map" : /drawn on the map|\+ drawn/i.test(state.boundaryName) ? state.boundaryName : `${state.boundaryName} + drawn areas`;
+    useBoundary(src, label, state.nameField || undefined);
+    const saved = await saveBoundary();
+    boundaryStatus((attach !== "" ? `Area added to ${featureLabel(state.features[+attach])}` : `${name} added`) + `: ${polygons(src.length)} in “${label}”.` + (saved ? " Saved on this device." : ""), "good", saved);
+  }
+
+  // The boundary in use (including drawn areas) as a KML file, to reuse or share.
+  function downloadBoundary() {
+    if (!state.userSrc.length) return;
+    const x = s => String(s).replace(/[<>&"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+    const pm = state.userSrc.map((f, i) => {
+      const nm = (state.nameField && f.props && f.props[state.nameField]) || (f.props && f.props.name) || f.name || `Polygon ${i + 1}`;
+      const rings = f.rings.map(r => r.map(([ lo, la ]) => `${lo},${la},0`).join(" "));
+      return `<Placemark><name>${x(nm)}</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${rings[0]}</coordinates></LinearRing></outerBoundaryIs>` +
+        rings.slice(1).map(r => `<innerBoundaryIs><LinearRing><coordinates>${r}</coordinates></LinearRing></innerBoundaryIs>`).join("") + `</Polygon></Placemark>`;
+    }).join("\n");
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${x(state.boundaryName || "Boundary")}</name>\n${pm}\n</Document></kml>\n`;
+    download(`${(state.boundaryName || "boundary").replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|]+/g, "_")}.kml`, new Blob([ kml ], { type: "application/vnd.google-earth.kml+xml" }));
   }
 
   async function onBoundaryFile(e) {
@@ -594,6 +756,7 @@
   function refreshLinks() {
     const wrap = $("rp-links-wrap");
     state.rows = buildRows();
+    if (state.places) placesStatus();
     const ready = state.rows.length > 0;
     $("rp-run").disabled = !ready;
     const noBoundary = !state.userFeatures.length;
@@ -659,13 +822,13 @@
       state.features = state.userFeatures;
       state.estimated = false;
       for (const [ g, v ] of Object.entries(state.links)) {
-        if (v !== "all" && v !== "" && v != null) groupFeatures[g] = [ +v ];
+        if (v !== "all" && v !== "" && v != null) groupFeatures[g] = [ +v ].concat(Ref() ? Ref().attached(state.userSrc, +v) : []);
       }
     }
     setStatus("rp-run-status", "Repairing…");
     setTimeout(() => {
       const t = performance.now();
-      state.results = R.repairRows(state.rows, { features: state.features, groupFeatures, digitFix: $("rp-digitfix").checked, estimated: state.estimated });
+      state.results = R.repairRows(state.rows, { features: state.features, groupFeatures, digitFix: $("rp-digitfix").checked, estimated: state.estimated, places: state.places });
       state.decisions = new Map();
       state.page = 0;
       state.filter = "all";
@@ -742,6 +905,15 @@
       const x = a.slice().sort((p, q) => p - q), m = x.length >> 1;
       return x.length % 2 ? x[m] : (x[m - 1] + x[m]) / 2;
     };
+    // Far from the village's location in the village locations file.
+    if (state.places) {
+      state.results.forEach((_, i) => {
+        const e = effective(i), p = R.placeFor(state.places, state.rows[i]);
+        if (e.lat == null || !p) return;
+        const d = R.km(e.lat, e.lon, p.lat, p.lon);
+        if (d > FLAG_KM) add(i, { kind: "far", text: `${d.toFixed(1)} km from ${p.name} (village locations file)` });
+      });
+    }
     for (const list of byVillage.values()) {
       if (list.length < 3) continue;
       const pts = list.map(i => effective(i));
@@ -973,6 +1145,7 @@
   /* ---------------- placing a point by hand ---------------- */
 
   function startPlacing(i) {
+    stopDrawing();
     ensureMap();
     if (!state.map) return;
     state.placing = i;
@@ -1001,6 +1174,11 @@
   }
 
   function onMapClick(ev) {
+    if (state.drawing) {
+      state.drawing.pts.push(ev.latlng);
+      drawingChanged();
+      return;
+    }
     if (state.placing == null) return;
     const i = state.placing;
     const lat = ev.latlng.lat, lon = ev.latlng.lng;
@@ -1157,6 +1335,7 @@
       L.tooltip({ permanent: true, direction: "center", className: "poly-label" }).setLatLng([ f.center[1], f.center[0] ]).setContent(esc(label)).addTo(g);
     });
     state.boundaryLayer = g.addTo(state.map);
+    drawPlaces();
     const b = state.features.reduce((a, f) => [ Math.min(a[0], f.bbox[0]), Math.min(a[1], f.bbox[1]), Math.max(a[2], f.bbox[2]), Math.max(a[3], f.bbox[3]) ], [ Infinity, Infinity, -Infinity, -Infinity ]);
     state.fitBox = [ [ b[1], b[0] ], [ b[3], b[2] ] ];
     fitMap();
@@ -1348,6 +1527,17 @@
     initAdvanced();
     $("rp-boundary").addEventListener("change", onBoundaryFile);
     restoreBoundary();
+    $("rp-places").addEventListener("change", onPlacesFile);
+    restorePlaces();
+    $("rp-draw").addEventListener("click", startDrawing);
+    $("rp-draw-finish").addEventListener("click", finishDrawing);
+    $("rp-draw-undo").addEventListener("click", () => {
+      if (!state.drawing) return;
+      state.drawing.pts.pop();
+      drawingChanged();
+    });
+    $("rp-draw-cancel").addEventListener("click", stopDrawing);
+    $("rp-boundary-download").addEventListener("click", downloadBoundary);
     $("rp-namefield").addEventListener("change", e => {
       state.nameField = e.target.value;
       refreshLinks();
@@ -1462,6 +1652,7 @@
     $("rp-place-cancel").addEventListener("click", stopPlacing);
     document.addEventListener("keydown", e => {
       if (e.key === "Escape" && state.placing != null) stopPlacing();
+      if (e.key === "Escape" && state.drawing) stopDrawing();
     });
     window.addEventListener("beforeunload", e => {
       if (state.dirty && state.decisions.size) {

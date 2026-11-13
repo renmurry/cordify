@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=6");
+      worker = new Worker("./assets/js/batch-worker.js?v=9");
     } catch (e) {
       return null;
     }
@@ -298,12 +298,15 @@
 
   const outCols = (res, f) => BC().outCols(res, f, f.grid ? window.CordifyGrid.cells : null);
 
-  // One row's result, rebuilt from the number arrays.
+  // One row's result, rebuilt from the number arrays (and the repair of a row that did not convert).
   function resOf(set, i) {
     const st = set.status[i];
     if (st === BC().EMPTY) return { empty: true };
     if (st === BC().OK) return { lat: set.lat[i], lon: set.lon[i], check: set.checks ? set.checks.get(i) : undefined };
-    return { error: set.errors ? set.errors.get(i) || "" : "" };
+    const fixed = set.repaired && set.repaired.get(i);
+    if (fixed) return { ...fixed };
+    const note = set.repairNotes && set.repairNotes.get(i);
+    return { error: (set.errors ? set.errors.get(i) || "" : "") + (note ? `; Repair: ${note}` : "") };
   }
 
   async function run() {
@@ -373,7 +376,7 @@
       (out.empty ? `, ${count(out.empty)} empty` : "") + "." +
       (out.check ? ` ${count(out.check)} converted row${out.check === 1 ? " is" : "s are"} worth checking (far from the rest, a duplicate, or typed roughly).` : "") +
       (out.coarse.length ? ` ${coarseText(out.coarse)}` : "");
-    status(msg, out.failed || out.check ? (out.ok ? "warn" : "bad") : "good", out.failed > 0);
+    status(msg, out.failed || out.check ? (out.ok ? "warn" : "bad") : "good", out.failed > 0 ? "both" : null);
     const any = out.ok + out.failed > 0;
     $("batch-download-xlsx").disabled = !any || !!state.big;
     $("batch-download-xlsx").setAttribute("data-tip", state.big ? "A file this large does not fit in an Excel workbook. Download CSV instead; Excel and QGIS both open it." : XLSX_TIP);
@@ -382,6 +385,7 @@
     $("batch-map").disabled = !out.ok;
     $("batch-view").querySelector('[value="check"]').textContent = `Converted, worth checking (${count(out.check)})`;
     $("batch-view").querySelector('[value="failed"]').textContent = `Not converted (${count(out.failed)})`;
+    $("batch-view").querySelector('[value="repaired"]').hidden = true;
     renderPreview();
   }
 
@@ -392,7 +396,9 @@
     const out = state.results, show = $("batch-view").value, B = BC();
     let base = 0, n = 0;
     let set = null;
-    const keep = (st, i) => show === "failed" ? st >= B.FAILED : show === "check" ? st === B.OK && set.checks && set.checks.has(i) : st !== B.EMPTY;
+    const fixed = i => !!(set.repaired && set.repaired.has(i));
+    const keep = (st, i) => show === "failed" ? st >= B.FAILED && !fixed(i) : show === "repaired" ? fixed(i) :
+      show === "check" ? st === B.OK && set.checks && set.checks.has(i) : st !== B.EMPTY;
     for (const name of out.names) {
       set = out.sets[name];
       set.base = base;
@@ -432,7 +438,8 @@
         const r = fromFile.get(i) || { raw: "", error: "" };
         raw = r.raw;
         rowNo = set.recNo[i];
-        if (res.error !== undefined) res = { error: r.error };
+        const note = set.repairNotes && set.repairNotes.get(i);
+        if (res.error !== undefined) res = { error: r.error + (note ? `; Repair: ${note}` : "") };
       } else {
         const s = state.sheets[name];
         raw = BC().rawOf(s.aoa[set.rowIndex[i]], s);
@@ -441,8 +448,10 @@
       const cols = outCols(res, out.f).filter(c => !BC().STATUS_COLS.has(c[0]));
       const ok = res.lat !== undefined;
       const result = !ok ? `<span class="badge st-bad">Not converted</span><br><span class="hint">${esc(res.error)}</span>` :
+        res.repaired === "fixed" ? `<span class="badge st-fixed">Repaired</span><br><span class="hint">${esc(res.check)}</span>` :
+        res.repaired ? `<span class="badge st-choose">Best guess</span><br><span class="hint">${esc(res.check)}</span>` :
         res.check ? `<span class="badge st-choose">Check</span><br><span class="hint">${esc(res.check)}</span>` : '<span class="badge st-ok">OK</span>';
-      return `<tr class="${ok ? res.check ? "batch-check" : "" : "batch-fail"}"><td class="hint">${multi ? esc(name) + " · " : ""}${rowNo}</td><td><pre class="raw">${esc(raw)}</pre></td>` +
+      return `<tr class="${!ok ? "batch-fail" : res.repaired === "fixed" ? "batch-fixed" : res.repaired || res.check ? "batch-check" : ""}"><td class="hint">${multi ? esc(name) + " · " : ""}${rowNo}</td><td><pre class="raw">${esc(raw)}</pre></td>` +
         cols.map(c => `<td class="num">${esc(c[1])}</td>`).join("") + `<td>${result}</td></tr>`;
     });
   }
@@ -491,7 +500,7 @@
     $("batch-body").innerHTML = rows.join("");
     $("batch-vt-view").classList.toggle("vt-end", total > shown && first + shown >= total);
     $("batch-preview-label").textContent = (total > shown ? `Rows ${count(first + 1)}–${count(first + shown)} of ${count(total)}` : `${count(total)} row${total === 1 ? "" : "s"}`) +
-      (show === "failed" ? " not converted" : show === "check" ? " worth checking" : "") + (total > shown ? " — scroll the table for more" : "");
+      (show === "failed" ? " not converted" : show === "check" ? " worth checking" : show === "repaired" ? " repaired" : "") + (total > shown ? " — scroll the table for more" : "");
   }
 
   /* ---------- download ---------- */
@@ -544,7 +553,8 @@
     if (!C || typeof JSZip === "undefined") return XLSX.writeFile(wb, name);
     plan.push(C.addLegend(XLSX, wb, [
       [ "ok", "Green", "Converted (Convert_Status: OK)" ],
-      [ "check", "Orange", "Converted, but worth checking: far from the other points, the same position as another row, or typed roughly. The reason is in Convert_Check." ],
+      [ "fixed", "Yellow", "Repaired: the value was mistyped and has one clear reading. Check it; what was changed is in Convert_Check." ],
+      [ "check", "Orange", "Worth checking: converted but far from the other points, the same position as another row, or typed roughly; or a repaired best guess where several readings fit. The reason is in Convert_Check." ],
       [ "bad", "Red", "Not converted: the reason is in Convert_Status. Badly typed values can often be fixed in Repair (Advanced mode)." ]
     ], (out.coarse.length ? coarseText(out.coarse) + " " : "") + "Rows with no colour have no coordinate. Made by Cordify."));
     try {
@@ -641,8 +651,8 @@
     const eachPoint = (name, fn) => {
       const s = state.sheets[name], set = out.sets[name];
       for (let i = 0; i < set.n; i++) {
-        if (set.status[i] !== OK) continue;
-        const res = { lat: set.lat[i], lon: set.lon[i] };
+        const res = resOf(set, i);
+        if (res.lat === undefined) continue;
         fn(s, s.aoa[set.rowIndex[i]], set.rowIndex[i] + 1, res, outCols(res, out.f).filter(c => c[0] !== "Convert_Status"));
       }
     };
@@ -689,9 +699,10 @@
     for (const name of out.names) {
       const set = out.sets[name];
       for (let i = 0; i < set.n; i++) {
-        if (set.status[i] !== BC().OK || seen++ % step) continue;
-        lat.push(set.lat[i]);
-        lon.push(set.lon[i]);
+        const fixed = set.repaired && set.repaired.get(i);
+        if ((set.status[i] !== BC().OK && !fixed) || seen++ % step) continue;
+        lat.push(fixed ? fixed.lat : set.lat[i]);
+        lon.push(fixed ? fixed.lon : set.lon[i]);
         label.push(`${out.names.length > 1 ? name + " · " : ""}row ${set.big ? set.recNo[i] : set.rowIndex[i] + 1}`);
       }
     }
@@ -715,18 +726,133 @@
     }, 300);
   }
 
-  function status(text, kind, offerRepair) {
+  // offer: "both" (repair here, or open the Repair tab), "tab" (only the Repair tab), or nothing
+  function status(text, kind, offer) {
     const el = $("batch-status");
     el.className = "hint batch-status" + (kind ? " " + kind : "");
     el.textContent = text;
-    if (offerRepair && $("advanced-mode")) {
+    if (offer === "both" && window.CordifyRepair) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "batch-repair-here";
+      b.textContent = "Repair them here";
+      b.setAttribute("data-tip", "Tries every sensible reading of each badly typed value, as the Repair tab does, using your saved boundary and village locations if you have them (otherwise the area is estimated from the rows that converted). Repaired rows are marked so you can check them.");
+      b.addEventListener("click", repairFailed);
+      el.append(" ", b);
+    }
+    if (offer && $("advanced-mode")) {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "btn-quiet batch-repair";
-      b.textContent = "Fix them with Repair (Advanced)";
+      b.textContent = offer === "tab" ? "Review them in the Repair tab" : "Fix them in the Repair tab (Advanced)";
       b.setAttribute("data-tip", "Opens the Repair tab, which can rebuild badly typed coordinates using a boundary. Load the same file there.");
       b.addEventListener("click", openRepair);
       el.append(" ", b);
+    }
+  }
+
+  /* ---------- repair the rows that did not convert ---------- */
+
+  const VILLAGE = /village|vill\b|locality|place|site/i;
+  const ANCHORS = 20000;   // converted rows given to Repair to show where the area and villages are
+
+  async function repairFailed() {
+    const out = state.results, R = window.CordifyRepair, Ref = window.CordifyReference, B = BC();
+    if (!out || busy || !R) return;
+    setBusy(true, "Repairing the rows that couldn't be read…");
+    try {
+      const rows = [], back = [];
+      for (const name of out.names) {
+        const set = out.sets[name], s = state.sheets[name];
+        const failed = [];
+        for (let i = 0; i < set.n; i++) if (set.status[i] >= B.FAILED) failed.push(i);
+        let cellsOf;
+        if (set.big) {
+          const m = failed.length ? await ask({ type: "window", ids: failed }) : { rows: [] };
+          const cells = new Map(m.rows.map(r => [ r.i, r.cells ]));
+          cellsOf = i => cells.get(i) || [];
+        } else {
+          cellsOf = i => {
+            const r = s.aoa[set.rowIndex[i]];
+            return s.mode === "one" ? [ r[s.one] ] : [ r[s.lat], r[s.lon] ];
+          };
+        }
+        const vi = set.big ? -1 : s.head.findIndex(x => VILLAGE.test(x));
+        const villageOf = i => vi >= 0 ? String(s.aoa[set.rowIndex[i]][vi] ?? "").trim() : "";
+        for (const i of failed) {
+          const c = cellsOf(i);
+          const row = s.mode === "one" ? { text: String(c[0] ?? "") } : { latText: String(c[0] ?? ""), lonText: String(c[1] ?? "") };
+          back.push({ set, i, k: rows.length });
+          rows.push(Object.assign(row, { id: rows.length, group: name, village: villageOf(i) }));
+        }
+        const ok = [];
+        for (let i = 0; i < set.n; i++) if (set.status[i] === B.OK) ok.push(i);
+        const step = Math.max(1, Math.ceil(ok.length / ANCHORS));
+        for (let k = 0; k < ok.length; k += step) {
+          const i = ok[k];
+          rows.push({ id: rows.length, text: `${set.lat[i]}, ${set.lon[i]}`, group: name, village: villageOf(i) });
+        }
+      }
+      if (!back.length) {
+        setBusy(false);
+        return;
+      }
+      await new Promise(r => setTimeout(r, 30));   // let the progress line show
+      const savedB = Ref ? await Ref.loadBoundary() : null, savedP = Ref ? await Ref.loadPlaces() : null;
+      let features, groupFeatures, estimated = false, how;
+      if (savedB && Array.isArray(savedB.src) && savedB.src.length) {
+        features = savedB.src.map((f, j) => R.buildFeature({ rings: f.rings, props: f.props }, j));
+        groupFeatures = Ref.groupFeatures(rows, features, savedB.src).groupFeatures;
+        how = `your saved boundary “${savedB.name}”`;
+      } else {
+        const est = R.estimateAreas(rows);
+        if (!est.features.length) {
+          setBusy(false);
+          status("Too few rows converted to estimate the area. Load a boundary in the Repair tab (Advanced mode) and try again.", "bad", "tab");
+          return;
+        }
+        features = est.features;
+        groupFeatures = est.groupFeatures;
+        estimated = true;
+        how = "an area estimated from the rows that converted (a boundary saved in the Repair tab makes this more reliable)";
+      }
+      const places = savedP && Array.isArray(savedP.list) && savedP.list.length ? R.buildPlaces(savedP.list) : null;
+      const res = R.repairRows(rows, { features, groupFeatures, digitFix: true, estimated, places });
+      const tally = { fixed: 0, check: 0, left: 0 };
+      for (const b of back) {
+        const r = res[b.k];
+        b.set.repaired = b.set.repaired || new Map();
+        b.set.repairNotes = b.set.repairNotes || new Map();
+        const note = r.notes.filter(n => !/^read as /.test(n)).slice(0, 3).join("; ");
+        if ((r.status === "fixed" || r.status === "choose") && r.lat != null) {
+          const kind = r.status === "fixed" ? "fixed" : "check";
+          b.set.repaired.set(b.i, { lat: r.lat, lon: r.lon, repaired: kind, check: (kind === "fixed" ? "repaired: " : "best guess, several readings fit: ") + note });
+          tally[kind]++;
+        } else {
+          b.set.repairNotes.set(b.i, note || "no reading fits the area");
+          tally.left++;
+        }
+      }
+      // A large CSV is written by the worker, which needs the repairs too.
+      for (const name of out.names) {
+        const set = out.sets[name];
+        if (set.big && set.repaired) await ask({ type: "repaired", entries: [ ...set.repaired ], notes: [ ...set.repairNotes ] });
+      }
+      out.repaired = tally;
+      setBusy(false);
+      gisButtons(false);
+      $("batch-map").disabled = false;
+      const n = tally.fixed + tally.check;
+      $("batch-view").querySelector('[value="repaired"]').hidden = !n;
+      $("batch-view").querySelector('[value="repaired"]').textContent = `Repaired (${count(n)})`;
+      $("batch-view").querySelector('[value="failed"]').textContent = `Not converted (${count(tally.left)})`;
+      status(`Repaired ${count(n)} of the ${count(back.length)} rows that couldn't be read, using ${how}${places ? " and your saved village locations" : ""}: ` +
+        `${count(tally.fixed)} with one clear reading (yellow), ${count(tally.check)} best guesses where several readings fit (orange).` +
+        (tally.left ? ` ${count(tally.left)} still couldn't be read (red).` : "") + " Check them before using them.", tally.left ? "warn" : "good", "tab");
+      renderPreview();
+    } catch (err) {
+      setBusy(false);
+      status(err.message === "cancelled" ? "Cancelled." : "The repair could not be finished. Try again, or use the Repair tab (Advanced mode).", err.message === "cancelled" ? "" : "bad", "tab");
     }
   }
 

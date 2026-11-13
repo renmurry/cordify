@@ -27,6 +27,7 @@
   const CLEAR_WIN = 2.5;           // best reading this much cheaper than the next = clear winner
   const FAR_FROM_VILLAGE_KM = 10;
   const ESTIMATE_TRUST_KM = 30;    // no boundary file: a correctly typed point this close to the estimated area is kept
+  const REF_MATCH_KM = 5;          // a clean point this close to its village's known location agrees with it
   const HABIT_MIN_ROWS = 3;        // rows typed the same way before their common reading is used for all of them
   const HABIT_SHARE = 0.5;         // ...and the share of them that must already read best that way
 
@@ -238,6 +239,12 @@
       }
     }
     seps.delete(S.length);
+    // A number stored with all of a computer's digits (Excel's 26.183333333333334): digits past
+    // the 12th decimal say nothing on the ground (a billionth of a millimetre), so they are dropped
+    // rather than letting the value become too long to read.
+    if (S.length > 14 && seps.size === 1 && seps.values().next().value === "dot") {
+      S = S.slice(0, Math.max(14, seps.keys().next().value + 9));
+    }
     return { S, seps, sign, stray };
   }
 
@@ -587,6 +594,9 @@
       if (!pts || pts.length < VILLAGE_MIN_POINTS) return null;
       return { lat: median(pts.map(p => p.lat)), lon: median(pts.map(p => p.lon)), n: pts.length };
     };
+    // A village's location from a village-locations file beats an estimate from the rows.
+    const refFor = row => placeFor(opts.places, row);
+    const centreFor = row => refFor(row) || villageCentre(villageKey(row));
 
     // Pass 2: candidates inside the target area (unranked).
     const results = rows.map((row, i) => {
@@ -602,7 +612,7 @@
       }
       const target = targetFor(row);
       const bbox = unionBbox(target);
-      const vc = villageCentre(villageKey(row));
+      const vc = centreFor(row);
       if (prep.clean) {
         const f = featureAt(target, prep.clean.lon, prep.clean.lat);
         if (f) {
@@ -620,11 +630,12 @@
           return res;
         }
         // Typed correctly, agrees with its village, but outside: never move it.
-        if (vc && km(prep.clean.lat, prep.clean.lon, vc.lat, vc.lon) <= VILLAGE_MATCH_KM) {
+        if (vc && km(prep.clean.lat, prep.clean.lon, vc.lat, vc.lon) <= (vc.ref ? REF_MATCH_KM : VILLAGE_MATCH_KM)) {
           const inAny = featureAt(features, prep.clean.lon, prep.clean.lat);
           Object.assign(res, {
             status: "outside", lat: prep.clean.lat, lon: prep.clean.lon, confidence: 0,
-            notes: [ `outside the boundary but matches ${vc.n - 1} other points from this village — check the boundary or the district` + (inAny ? ` (it falls in polygon ${inAny.index + 1})` : "") ]
+            notes: [ (vc.ref ? `outside the boundary but ${km(prep.clean.lat, prep.clean.lon, vc.lat, vc.lon).toFixed(1)} km from ${vc.name} in the village locations file` :
+              `outside the boundary but matches ${vc.n - 1} other points from this village`) + ` — check the boundary or the district` + (inAny ? ` (it falls in polygon ${inAny.index + 1})` : "") ]
           });
           return res;
         }
@@ -677,11 +688,13 @@
       if (res.status !== "pending") {
         return;
       }
-      const vc = villageCentre(villageKey(rows[i])) || guessCentre(villageKey(rows[i]));
+      const vc = centreFor(rows[i]) || guessCentre(villageKey(rows[i]));
       let cands = res.candidates;
       for (const c of cands) {
         c.distKm = vc ? km(c.lat, c.lon, vc.lat, vc.lon) : null;
-        c.score = c.cost + (c.distKm == null ? 0 : Math.min(3, c.distKm / 5));
+        // A known village location counts for more than an estimate from the other rows.
+        c.score = c.cost + (c.distKm == null ? 0 : vc.ref ? Math.min(6, c.distKm / 2) : Math.min(3, c.distKm / 5));
+        if (vc && vc.ref) c.refName = vc.name;
       }
       cands.sort((a, b) => a.score - b.score);
       cands = res.candidates = cands.slice(0, 6);
@@ -692,7 +705,7 @@
       res.notes = best.notes.slice();
       const far = best.distKm != null && best.distKm > FAR_FROM_VILLAGE_KM;
       if (far) {
-        res.notes.push(`${best.distKm.toFixed(1)} km from this village's other points`);
+        res.notes.push(vc.ref ? `${best.distKm.toFixed(1)} km from ${vc.name} in the village locations file` : `${best.distKm.toFixed(1)} km from this village's other points`);
       }
       const clearWin = cands.length === 1 || cands[1].score - best.score >= CLEAR_WIN;
       // A value that was typed validly is never changed without the user confirming.
@@ -719,6 +732,46 @@
       if (preps[i].clean && r.status !== "ok" && r.status !== "empty") r.typed = { lat: preps[i].clean.lat, lon: preps[i].clean.lon };
     });
     return results;
+  }
+
+  /* ---------- village locations ---------- */
+
+  // Names as people type them: "Tamlu Village", "TAMLU vill.", "Tamlu" are one place.
+  function placeKey(name) {
+    return String(name ?? "").toLowerCase()
+      .replace(/\b(village|vill|vil|town|basti|colony)\b\.?/g, "")
+      .replace(/[^a-z0-9]/g, "");
+  }
+
+  /*
+   * A lookup of village locations, from a list of { name, lat, lon, group? } (group: district).
+   * A name found in two places far apart without a district is ambiguous and left out.
+   */
+  function buildPlaces(list) {
+    const map = new Map(), clash = new Set();
+    const put = (key, p) => {
+      if (!key) return;
+      const had = map.get(key);
+      if (had && km(had.lat, had.lon, p.lat, p.lon) > 2) clash.add(key);
+      else if (!had) map.set(key, p);
+    };
+    for (const p of list) {
+      if (!Number.isFinite(p.lat) || !Number.isFinite(p.lon) || !placeKey(p.name)) continue;
+      const entry = { name: String(p.name).trim(), lat: p.lat, lon: p.lon };
+      if (p.group) put(`${placeKey(p.group)}|${placeKey(p.name)}`, entry);
+      put(placeKey(p.name), entry);
+    }
+    clash.forEach(k => map.delete(k));
+    map.ambiguous = clash.size;
+    return map;
+  }
+
+  // The known location of a row's village (its district first), or null.
+  function placeFor(places, row) {
+    if (!places || !row.village) return null;
+    const v = placeKey(row.village);
+    const p = (row.group != null && places.get(`${placeKey(row.group)}|${v}`)) || places.get(v);
+    return p ? { lat: p.lat, lon: p.lon, name: p.name, ref: true, n: Infinity } : null;
   }
 
   // What a reading did, without the parts that differ from row to row.
@@ -953,6 +1006,6 @@
 
   return {
     patternOf, formatDMS, formatDDM, formatDD, estimateAreas, normalizeText, cleanText, splitCell, parsePart, readings, prepareRow, pairsFor,
-    buildFeature, contains, featureAt, km, kmToBox, repairRows, learnGroupFeatures, signatureOf
+    buildFeature, contains, featureAt, km, kmToBox, repairRows, learnGroupFeatures, signatureOf, placeKey, buildPlaces, placeFor
   };
 });

@@ -80,6 +80,12 @@ cols = B.outCols({ lat: 26.9, lon: 95, check: "same position as row 4" }, { dd: 
 expect("a row worth checking says so in both status columns", cols.find(c => c[0] === "Convert_Status")[1] === "OK - check" && cols.find(c => c[0] === "Convert_Check")[1] === "same position as row 4", cols);
 expect("colour of a row", B.kindOf({ lat: 1, lon: 2 }) === "ok" && B.kindOf({ lat: 1, lon: 2, check: "x" }) === "check" && B.kindOf({ error: "x" }) === "bad" && B.kindOf({ empty: true }) === null);
 
+cols = B.outCols({ lat: 26.69085, lon: 95.022933, repaired: "fixed", check: "repaired: ' read as decimal point" }, { dd: true, ddDigits: 6 }, null);
+expect("a repaired row has its values and says so", cols[0][1] === 26.69085 && cols.find(c => c[0] === "Convert_Status")[1] === "Repaired - check" && /' read as decimal point/.test(cols.find(c => c[0] === "Convert_Check")[1]), cols);
+cols = B.outCols({ lat: 26.2, lon: 95.1, repaired: "check", check: "best guess, several readings fit" }, { dd: true, ddDigits: 6 }, null);
+expect("a repaired best guess says so", cols.find(c => c[0] === "Convert_Status")[1] === "Best guess - check");
+expect("colour of a repaired row", B.kindOf({ lat: 1, lon: 2, repaired: "fixed" }) === "fixed" && B.kindOf({ lat: 1, lon: 2, repaired: "check" }) === "check");
+
 /* ---------- how finely a value was typed ---------- */
 
 const m = t => Math.round(B.precisionOf(t));
