@@ -1,0 +1,23 @@
+{
+ "built": "2026-11-13T03:08:16.854Z",
+ "channels": [
+  {
+   "id": "latest",
+   "label": "Latest",
+   "path": "./",
+   "ref": "v3.4.0",
+   "version": "v3.4.0",
+   "commit": "96a9ba6",
+   "date": "2026-11-13"
+  },
+  {
+   "id": "previous",
+   "label": "Previous",
+   "path": "previous/",
+   "ref": "v3.3.0",
+   "version": "v3.3.0",
+   "commit": "9f6f669",
+   "date": "2026-11-13"
+  }
+ ]
+}
