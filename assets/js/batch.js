@@ -489,17 +489,10 @@
 
   // The systems a person can pick: zone in each cell, Web Mercator, UTM 1N…60S, radians, swapped.
   function systemOptions(chosen) {
-    const S = window.CordifySystems, keyOf = sys => sys.kind === "utm" ? `utm:${sys.zone}:${sys.south ? "S" : "N"}` : sys.kind;
-    const all = [ { kind: "cell" }, { kind: "mercator" } ];
-    for (const south of [ false, true ]) for (let z = 1; z <= 60; z++) all.push({ kind: "utm", zone: z, south });
-    all.push({ kind: "radians" }, { kind: "swap" });
-    const sel = chosen ? keyOf(chosen) : "";
-    return `<option value="">Choose…</option>` + all.map(sys => `<option value="${keyOf(sys)}"${keyOf(sys) === sel ? " selected" : ""}>${esc(S.labelOf(sys))}</option>`).join("");
+    const S = window.CordifySystems, sel = chosen ? S.keyOf(chosen) : "";
+    return `<option value="">Choose…</option>` + S.choices().map(sys => `<option value="${S.keyOf(sys)}"${S.keyOf(sys) === sel ? " selected" : ""}>${esc(S.labelOf(sys))}</option>`).join("");
   }
-  function systemFromKey(k) {
-    const m = /^utm:(\d+):([NS])$/.exec(k);
-    return m ? { kind: "utm", zone: +m[1], south: m[2] === "S" } : k ? { kind: k } : null;
-  }
+  const systemFromKey = k => window.CordifySystems.fromKey(k);
 
   function showSystems(list) {
     const box = $("batch-systems"), S = window.CordifySystems;

@@ -166,6 +166,21 @@
   };
   const labelOf = s => LABEL[s.kind] ? LABEL[s.kind](s) : s.kind;
 
+  // A system as a short text key for <select> values ("utm:46:N", "radians") and back.
+  const keyOf = s => s.kind === "utm" ? `utm:${s.zone}:${s.south ? "S" : "N"}` : s.kind;
+  function fromKey(k) {
+    const m = /^utm:(\d{1,2}):([NS])$/.exec(k || "");
+    if (m) return +m[1] >= 1 && +m[1] <= 60 ? { kind: "utm", zone: +m[1], south: m[2] === "S" } : null;
+    return LABEL[k] ? { kind: k } : null;
+  }
+  // Every system a person can pick: zone in each cell, Web Mercator, UTM 1N…60N, 1S…60S, radians, swapped.
+  function choices() {
+    const all = [ { kind: "cell" }, { kind: "mercator" } ];
+    for (const south of [ false, true ]) for (let z = 1; z <= 60; z++) all.push({ kind: "utm", zone: z, south });
+    all.push({ kind: "radians" }, { kind: "swap" });
+    return all;
+  }
+
   /*
    * read(cells, system, twoColumns) -> { lat, lon } or { error }
    * cells: [one cell] or [latitude-or-northing cell, longitude-or-easting cell].
@@ -296,5 +311,5 @@
     return valid(y, x) ? { lat: y, lon: x } : { error: "could not shift the datum" };
   }
 
-  return { utmInverse, mgrsToUtm, toMgrs, utmCell, readCell, read, detect, labelOf, toWgs84, DATUMS, numbersOf };
+  return { utmInverse, mgrsToUtm, toMgrs, utmCell, readCell, read, detect, labelOf, keyOf, fromKey, choices, toWgs84, DATUMS, numbersOf };
 });
