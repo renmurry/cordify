@@ -364,6 +364,8 @@
         <div class="card-head"><h2 id="scan-s2">2. Check what was found</h2>
           <span class="hint">Compare each picture with the reading. Correct the text if it is wrong; untick anything that is not a point you want.</span></div>
         <div class="chips" id="scan-chips"></div>
+        <div class="actions"><button type="button" class="btn-quiet" id="scan-report-btn" data-tip="A few points on what was found: how many readings are clear and why the rest are not, which look like another coordinate system, and which deserve a look. Nothing is changed.">Report</button></div>
+        <div class="scan-report" id="scan-report" hidden></div>
         <div class="table-wrap">
           <table class="table rp-table scan-table">
             <thead><tr><th>Use</th><th>Found in the document</th><th>Read as</th><th>Name</th><th>Result</th></tr></thead>
@@ -552,7 +554,7 @@
   <script src="./assets/vendor/jszip.min.js"></script>
   
   <script src="./assets/vendor/xlsx.full.min.js"></script>
-  <script src="./assets/js/core.js?v=2"></script>
+  <script src="./assets/js/core.js?v=3"></script>
   <script src="./assets/js/grid.js?v=2"></script>
   <script src="./assets/js/db.js?v=1"></script>
   <script src="./assets/js/historyStore.js?v=2"></script>
@@ -564,7 +566,7 @@
   <script src="./assets/js/repair-ui.js?v=15"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
   <script src="./assets/js/looks.js?v=1"></script>
-  <script src="./assets/js/versions.js?v=1"></script>
+  <script src="./assets/js/versions.js?v=2"></script>
   <script src="./assets/js/pinpoint.js?v=3"></script>
   <script src="./assets/js/systems.js?v=3"></script>
   <script src="./assets/js/batch-core.js?v=8"></script>
@@ -572,10 +574,10 @@
   <script src="./assets/js/report.js?v=1"></script>
   <script src="./assets/js/geo-io.js?v=2"></script>
   <script src="./assets/js/gis-export.js?v=2"></script>
-  <script src="./assets/js/batch.js?v=16"></script>
-  <script src="./assets/js/sheet.js?v=5"></script>
+  <script src="./assets/js/batch.js?v=17"></script>
+  <script src="./assets/js/sheet.js?v=6"></script>
   <script src="./assets/js/scan-core.js?v=2"></script>
-  <script src="./assets/js/scan.js?v=3"></script>
+  <script src="./assets/js/scan.js?v=4"></script>
   <script src="./assets/js/tips.js?v=1"></script>
 
 <script>

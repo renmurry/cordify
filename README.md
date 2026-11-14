@@ -125,6 +125,8 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   readings near each row's own village and flag points far from it. It is
   remembered on the device like the boundary.
   The Excel export colours each row by its result, with a Legend sheet.
+  "Scan first" in Repair, and "Report" on the Scan tab, give the same short
+  report as Batch before anything is changed.
   Rows that are not plainly fine show the wrong characters marked in yellow,
   and rows that could not be fixed say which character is wrong. With
   "Use typing habits" ticked, rows with two readings are read like the rest
@@ -227,6 +229,10 @@ between them:
 - **Latest**: the newest release tag (`v1.2.3`), at the usual address
 - **Previous**: the release before it, at `previous/`, as a fallback
 - **Preview**: a branch that is not released yet, at `preview/`, to try first
+
+A release can have a name as well as a number: tag it with a message that
+starts with the name (`git tag -a v3.10.0 -m "Fable: …"`) and the menu shows
+"v3.10.0 Fable".
 
 Previous and Preview work online only, and all three share what the browser
 has saved. To publish after tagging a release:
