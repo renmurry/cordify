@@ -870,8 +870,12 @@
     if (e.status === "guess") return "best guess, not checked — " + e.res.notes.join("; ");
     const d = state.decisions.get(i);
     if (d && d.chosen != null && e.cand) return e.cand.notes.join("; ");
-    return e.res.notes.join("; ");
+    // Not fixed: also say which character is wrong, when that can be found.
+    const pin = e.status === "failed" && window.CordifyPinpoint ? window.CordifyPinpoint.explainShown(state.rows[i].raw).map(x => x.r.summary).filter(Boolean).join("; ") : "";
+    return e.res.notes.concat(pin ? [ pin ] : []).join("; ");
   }
+  // The typed text with the wrong characters marked, for rows that are not plainly fine.
+  const rawHtml = (raw, status) => status === "ok" || status === "empty" || !window.CordifyPinpoint ? esc(raw) : window.CordifyPinpoint.markup(raw, esc);
 
   // Same point for different rows, and points far from the rest of their village.
   const FLAG_KM = 5;
@@ -1050,7 +1054,7 @@
     const where = (row.sheet === row.group ? esc(row.sheet) : `${esc(row.sheet)} · ${esc(row.group)}`) + (row.multi ? ` · ${esc(row.setLabel)}` : "");
     return `<tr class="${st.cls}" data-i="${i}">
       <td><span class="hint">${where} · row ${row.rowIndex + 1}</span><br>${esc(row.village || "")}</td>
-      <td><pre class="raw">${esc(row.raw)}</pre></td>
+      <td><pre class="raw">${rawHtml(row.raw, e.status)}</pre></td>
       <td class="num">${e.lat != null ? `${fmt(e.lat)}<br>${fmt(e.lon)}` : "—"}</td>
       <td><span class="badge ${st.cls}">${st.label}</span>${e.status !== "empty" && e.status !== "ok" ? `<br><span class="hint">${res.confidence}%</span>` : ""}</td>
       <td class="note">${tags ? tags + "<br>" : ""}${esc([ noteFor(i), ...fl.map(f => f.text) ].filter(Boolean).join("; "))}</td>

@@ -304,13 +304,16 @@
     const toks = tokens(w);
     const { vals, seps } = valuesOf(toks, w);
     const problems = found.slice();
+    const roles = [];
     // Pre-pass fixes become readings of their value.
     if (role) {
       if (vals.length > 1) {
         const at = vals[1][0].at;
         problems.push({ at, len: 1, kind: "error", why: `this cell should hold only the ${role === "lat" ? "latitude" : "longitude"}, but has ${vals.length} values`, readings: [] });
       } else if (vals.length === 1) {
-        problems.push(...checkValue(vals[0], role, w, found).errors);
+        const c = checkValue(vals[0], role, w, found);
+        roles.push(c.role);
+        problems.push(...c.errors);
       }
     } else if (vals.length === 1) {
       problems.push({ at: vals[0][0].at, len: s.trimEnd().length - vals[0][0].at, kind: "error", why: "only one value is here; latitude and longitude are both needed", readings: [] });
@@ -320,7 +323,11 @@
       const at = tab ? tab.at : vals[2][0].at;
       problems.push({ at, len: 1, kind: "error", why: `the cell holds ${vals.length} values instead of 2${tab ? "; this tab joins two of them" : ""}`, readings: [] });
     } else if (vals.length === 2) {
-      vals.forEach((v, i) => problems.push(...checkValue(v, i === 0 ? "lat" : "lon", w, found).errors));
+      vals.forEach((v, i) => {
+        const c = checkValue(v, i === 0 ? "lat" : "lon", w, found);
+        roles.push(c.role);
+        problems.push(...c.errors);
+      });
     }
     // A value whose only problems came from the pre-pass: its reading is the cleaned text.
     for (const p of problems) {
@@ -332,7 +339,13 @@
     }
     problems.sort((a, b) => a.at - b.at || (a.kind === "error" ? -1 : 1));
     const errors = problems.filter(p => p.kind === "error");
-    return { problems, errors: errors.length, summary: summaryOf(errors), text: s };
+    // Each value on its own, when the cell holds the expected number of them: what was
+    // typed (as cleaned, positions unchanged) and the errors inside it.
+    const values = roles.length === (role ? 1 : 2) ? vals.map((v, i) => {
+      const at = v[0].at, end = v[v.length - 1].at + v[v.length - 1].len;
+      return { role: roles[i], at, end, text: w.slice(at, end).trim(), errors: errors.filter(p => p.at >= at && p.at < end) };
+    }) : null;
+    return { problems, errors: errors.length, summary: summaryOf(errors), text: s, values };
   }
 
   function summaryOf(errors) {
