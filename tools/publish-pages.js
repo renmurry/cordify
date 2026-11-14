@@ -60,12 +60,21 @@ if (!opt("--no-preview")) {
   else if (+git("rev-list", "--count", `${tags[0]}..main`) > 0) previewRef = "main";
 }
 
-// What to show for a ref: its tag (or branch name), short commit and date.
+// A release can carry a name: the first word of its tag message, when the message starts
+// with "Name: …" or "Name — …" (git tag -a v3.10.0 -m "Fable: …").
+function nameOf(ref) {
+  if (semver(ref).length !== 3) return "";
+  const subject = git("tag", "-l", "--format=%(contents:subject)", ref);
+  const m = subject.match(/^([A-Z][A-Za-z]{1,19})(?=\s*[:—–-]\s)/);
+  return m ? m[1] : "";
+}
+
+// What to show for a ref: its tag (or branch name), its name if it has one, short commit and date.
 function describe(ref) {
   const sha = git("rev-parse", "--short", `${ref}^{commit}`);
   const date = git("log", "-1", "--format=%cs", `${ref}^{commit}`);
   const version = semver(ref).length === 3 ? ref : /^[0-9a-f]{7,40}$/i.test(ref) ? sha : `${ref} (${sha})`;
-  return { ref, version, commit: sha, date };
+  return { ref, version, name: nameOf(ref), commit: sha, date };
 }
 
 // Writes the files of a ref into a folder, exactly as stored in git (no tar needed, so it works
@@ -94,7 +103,7 @@ function markChannel(dir, label, info, note) {
   const file = path.join(dir, "index.html");
   const html = fs.readFileSync(file, "utf8");
   const bar = `<div class="cordify-channel-bar" style="padding:7px 14px;font:600 13px/1.45 system-ui,'Segoe UI',Roboto,sans-serif;background:#7a4a00;color:#fff;text-align:center">` +
-    `You are using the <b>${label}</b> version (${info.version}, ${info.date}). ${note} ` +
+    `You are using the <b>${label}</b> version (${info.version}${info.name ? ` “${info.name}”` : ""}, ${info.date}). ${note} ` +
     `<a href="../" style="color:#fff;text-decoration:underline">Go to the latest version</a></div>`;
   fs.writeFileSync(file, html.replace(/<body([^>]*)>/i, m => `${m}\n${bar}`));
 }
@@ -122,7 +131,7 @@ if (previewRef) {
 fs.writeFileSync(path.join(build, "channels.json"), JSON.stringify({ built: new Date().toISOString(), channels }, null, 1) + "\n");
 fs.writeFileSync(path.join(build, ".nojekyll"), "");   // publish files as they are, without Jekyll
 console.log(`Built in ${build}`);
-channels.forEach(c => console.log(`  ${c.label.padEnd(8)} /${c.path === "./" ? "" : c.path}  ${c.version}  ${c.date}`));
+channels.forEach(c => console.log(`  ${c.label.padEnd(8)} /${c.path === "./" ? "" : c.path}  ${c.version}${c.name ? ` “${c.name}”` : ""}  ${c.date}`));
 
 if (PUSH) {
   // Publish: replace the gh-pages branch's files with the build, as one new commit.
