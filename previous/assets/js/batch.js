@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=9");
+      worker = new Worker("./assets/js/batch-worker.js?v=10");
     } catch (e) {
       return null;
     }
@@ -602,10 +602,11 @@
     download(`${state.fileName || "cordify"}_converted_csv.zip`, await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
   }
 
-  /* ---------- download for GIS software ---------- */
+  /* ---------- export for GIS (the shared dialog in gis-export.js) ---------- */
 
   const gisButtons = off => document.querySelectorAll("#batch-gis button").forEach(b => { b.disabled = off; });
 
+  // GeoPackage files are SQLite databases, written with sql.js (assets/vendor), loaded only when needed.
   let sqlPromise = null;
   function loadSql() {
     if (sqlPromise) return sqlPromise;
@@ -621,70 +622,57 @@
     sqlPromise.catch(() => { sqlPromise = null; });
     return sqlPromise;
   }
-  const GPKG_FAILED = "The GeoPackage could not be written. Very large files may not fit in this device's memory. GeoJSON does not have that limit, and QGIS opens it too.";
 
-  // Only rows that converted become points; each keeps its original columns and the new ones.
-  async function downloadGeo(format) {
+  const BATCH_LEGEND = [
+    [ "ok", "Green", "Converted." ],
+    [ "fixed", "Yellow", "Repaired: the value was mistyped and has one clear reading. Check it." ],
+    [ "check", "Orange", "Worth checking: far from the other points, a duplicate, typed roughly, or a repaired best guess." ],
+    [ "bad", "Red", "Not converted." ]
+  ];
+
+  // Every converted sheet as rows: its own columns, then the new ones; rows without a coordinate kept too.
+  function gisDatasets() {
     const out = state.results;
-    if (!out || busy) return;
     out.f = formats();
-    const base = `${state.fileName || "cordify"}_converted`;
-    if (state.big) {
-      setBusy(true, "Writing the file…");
-      try {
-        const m = await ask({ type: "exportGeo", format, f: out.f, title: state.fileName, sqlJs: SQL_JS, gridSpec: gridOn() ? window.CordifyGrid.spec() : "off" },
-          p => progress(p.done / p.total, `${count(p.rows)} points written`));
-        setBusy(false);
-        if (m.blob) download(`${base}.${m.ext}`, m.blob);
-      } catch (err) {
-        setBusy(false);
-        if (err.message === "cancelled") {
-          clearResults();
-          status("Cancelled. Convert again to download.");
-        } else status(format === "gpkg" ? GPKG_FAILED : "The file could not be written. Try again.", "bad");
-      }
-      return;
-    }
-    const G = window.CordifyGeoIO, OK = BC().OK, multi = out.names.length > 1;
-    const added = outCols({ empty: true }, out.f).filter(c => c[0] !== "Convert_Status").map(c => c[0]);
-    // fn(sheet, set, original row, its number, the new cells) for every converted row
-    const eachPoint = (name, fn) => {
-      const s = state.sheets[name], set = out.sets[name];
+    const added = outCols({ empty: true }, out.f).map(c => c[0]);
+    return out.names.map(name => {
+      const s = state.sheets[name], set = out.sets[name], rows = [];
       for (let i = 0; i < set.n; i++) {
         const res = resOf(set, i);
-        if (res.lat === undefined) continue;
-        fn(s, s.aoa[set.rowIndex[i]], set.rowIndex[i] + 1, res, outCols(res, out.f).filter(c => c[0] !== "Convert_Status"));
-      }
-    };
-    try {
-      if (format === "gpkg") {
-        setBusy(true, "Preparing GeoPackage…");
-        const pkg = G.gpkg(await loadSql());
-        for (const name of out.names) {
-          const s = state.sheets[name];
-          const tb = pkg.table(multi ? name : state.fileName || name, s.head.map(h => ({ name: h, type: "TEXT" })).concat(added.map(n => ({ name: n, type: G.NUMERIC.test(n) ? "DOUBLE" : "TEXT" }))));
-          eachPoint(name, (_, row, no, res, cols) => tb.point(res.lat, res.lon, s.head.map((h, j) => row[j]).concat(cols.map(c => c[1]))));
-        }
-        const bytes = pkg.finish();
-        setBusy(false);
-        download(`${base}.gpkg`, new Blob([ bytes ], { type: "application/geopackage+sqlite3" }));
-        return;
-      }
-      const w = G.textWriter(format, state.fileName || "Cordify");
-      const parts = [ w.head ];
-      for (const name of out.names) {
-        const nameCol = state.sheets[name].head.findIndex(h => G.NAME_KEY.test(h));
-        eachPoint(name, (s, row, no, res, cols) => {
-          const props = s.head.map((h, j) => [ h, row[j] ]).concat(multi ? [ [ "Sheet", name ] ] : [], cols);
-          parts.push(w.point(nameCol >= 0 && String(row[nameCol] ?? "").trim() ? String(row[nameCol]) : `Row ${no}`, res.lat, res.lon, props));
+        if (res.empty) continue;
+        const r = s.aoa[set.rowIndex[i]];
+        rows.push({
+          lat: res.lat ?? null, lon: res.lon ?? null, rowNo: set.rowIndex[i] + 1, kind: BC().kindOf(res), reason: res.lat === undefined ? res.error : "",
+          values: s.head.map((h, j) => r[j]).concat(outCols(res, out.f).map(c => c[1]))
         });
       }
-      parts.push(w.tail);
-      download(`${base}.${w.ext}`, new Blob(parts, { type: w.mime }));
-    } catch (err) {
-      setBusy(false);
-      status(format === "gpkg" ? GPKG_FAILED : "The file could not be written. Try again.", "bad");
+      return { name, head: s.head.concat(added), rows };
+    });
+  }
+
+  function openGisExport() {
+    const out = state.results;
+    if (!out || busy || !window.CordifyGisExport) return;
+    if (!state.big) {
+      window.CordifyGisExport.open({ fileName: state.fileName || "cordify", datasets: gisDatasets(), legend: BATCH_LEGEND });
+      return;
     }
+    // A large CSV: the worker writes each format straight from the file on disk.
+    out.f = formats();
+    const name = Object.keys(out.sets)[0], s = state.sheets[name];
+    const added = outCols({ empty: true }, out.f).map(c => c[0]);
+    window.CordifyGisExport.open({
+      fileName: state.fileName || "cordify",
+      big: {
+        name: state.fileName || "cordify", head: s.head.concat(added), points: out.ok + (out.repaired ? out.repaired.fixed + out.repaired.check : 0),
+        formats: [ "gpkg", "geojson", "kml", "kmz", "gpx" ],
+        run: async (format, keep, colour) => {
+          const m = await ask({ type: "exportGeo", format, keep, colour, f: out.f, title: state.fileName, sqlJs: SQL_JS, gridSpec: gridOn() ? window.CordifyGrid.spec() : "off" });
+          if (!m.blob) throw new Error("nothing written");
+          return m.blob;
+        }
+      }
+    });
   }
 
   /* ---------- map ---------- */
@@ -900,10 +888,7 @@
     $("batch-download-xlsx").addEventListener("click", downloadXlsx);
     $("batch-download-csv").addEventListener("click", downloadCsv);
     $("batch-map").addEventListener("click", showOnMap);
-    $("batch-gis").addEventListener("click", e => {
-      const b = e.target.closest("button[data-fmt]");
-      if (b && !b.disabled) downloadGeo(b.dataset.fmt);
-    });
+    $("batch-gis-open").addEventListener("click", openGisExport);
     $("batch-view").addEventListener("change", renderPreview);
     $("batch-vt").addEventListener("scroll", () => {
       if (!frame) {

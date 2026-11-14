@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=16">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=17">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -17,7 +17,7 @@
   </script>
 </head>
 <body>
-<div class="cordify-channel-bar" style="padding:7px 14px;font:600 13px/1.45 system-ui,'Segoe UI',Roboto,sans-serif;background:#7a4a00;color:#fff;text-align:center">You are using the <b>Previous</b> version (v3.4.0, 2026-11-13). Use it if the latest version gives you trouble. It works online only. <a href="../" style="color:#fff;text-decoration:underline">Go to the latest version</a></div>
+<div class="cordify-channel-bar" style="padding:7px 14px;font:600 13px/1.45 system-ui,'Segoe UI',Roboto,sans-serif;background:#7a4a00;color:#fff;text-align:center">You are using the <b>Previous</b> version (v3.5.0, 2026-11-14). Use it if the latest version gives you trouble. It works online only. <a href="../" style="color:#fff;text-decoration:underline">Go to the latest version</a></div>
 <div class="app">
 
   <header class="app-header">
@@ -213,8 +213,7 @@
           <button type="button" id="sheet-new" data-tip="Start another sheet, for example one per project or document. Each keeps its own points.">New sheet</button>
           <button type="button" class="btn-quiet" id="sheet-rename">Rename</button>
           <button type="button" class="btn-quiet" id="sheet-delete">Delete</button>
-          <button type="button" id="sheet-export" data-tip="Every sheet, in every format, sorted into folders: GeoPackage, GeoJSON, KML, KMZ, GPX, CSV and Excel. One zip file.">Export for GIS (zip)</button>
-          <button type="button" id="sheet-export-folder" hidden data-tip="The same export, written straight into a folder you choose instead of a zip.">Save to a folder…</button>
+          <button type="button" id="sheet-export" data-tip="Every sheet, in the formats you choose (GeoPackage, Shapefile, GeoJSON, KML, KMZ, GPX, CSV, Excel), sorted into folders: one zip, or a folder you pick.">Export for GIS…</button>
         </div>
         <div id="sheet-choice" class="sheet-choice" hidden>
           <span id="sheet-choice-text"></span>
@@ -274,12 +273,8 @@
           <button id="batch-map" type="button" class="map-btn" disabled data-tip="Shows the converted points on the Map tab. Very large files are thinned evenly to 50,000 points.">Show on map</button>
         </div>
         <div class="actions batch-gis" id="batch-gis" hidden>
-          <span class="field-label">For GIS software</span>
-          <button type="button" data-fmt="gpkg" disabled data-tip="GeoPackage: one file that QGIS and ArcGIS open directly, with the coordinate system built in.">GeoPackage</button>
-          <button type="button" data-fmt="geojson" disabled data-tip="GeoJSON: opens in QGIS, web maps and most GIS tools.">GeoJSON</button>
-          <button type="button" data-fmt="kml" disabled data-tip="KML: for Google Earth.">KML</button>
-          <button type="button" data-fmt="gpx" disabled data-tip="GPX waypoints: for handheld GPS units and field apps.">GPX</button>
-          <span class="hint">Only rows that converted are included, as WGS 84 points.</span>
+          <button type="button" id="batch-gis-open" disabled data-tip="Choose the formats (GeoPackage, Shapefile, GeoJSON, KML, KMZ, GPX, CSV, Excel) and the columns to carry, and get one zip with a folder per sheet and per format. Pins are coloured by result.">Export for GIS…</button>
+          <span class="hint">For QGIS, ArcGIS, Google Earth and GPS units. Every column can come along.</span>
         </div>
         <div class="batch-progress" id="batch-progress-wrap" hidden>
           <progress id="batch-progress" max="1" value="0" aria-label="Progress"></progress>
@@ -511,8 +506,7 @@
         </div>
         <div class="actions">
           <button type="button" class="btn-primary" id="rp-export-xlsx" data-tip="Your workbook with the new columns added. Other sheets and original cells are kept.">Download workbook (.xlsx)</button>
-          <button type="button" id="rp-export-geojson" data-tip="The points with all their columns, for QGIS, ArcGIS and web maps.">GeoJSON</button>
-          <button type="button" id="rp-export-kml" data-tip="The points for Google Earth, coloured by status.">KML</button>
+          <button type="button" id="rp-export-gis" data-tip="Choose the formats (GeoPackage, Shapefile, GeoJSON, KML, KMZ, GPX, CSV, Excel) and the columns to carry, and get one zip with a folder per sheet and per format. Pins and rows are coloured by status.">Export for GIS…</button>
         </div>
       </section>
     </div>
@@ -551,14 +545,15 @@
   <script src="./assets/js/repair-engine.js?v=7"></script>
   <script src="./assets/js/xlsx-color.js?v=1"></script>
   <script src="./assets/js/reference.js?v=1"></script>
-  <script src="./assets/js/repair-ui.js?v=8"></script>
+  <script src="./assets/js/repair-ui.js?v=9"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
   <script src="./assets/js/looks.js?v=1"></script>
   <script src="./assets/js/versions.js?v=1"></script>
   <script src="./assets/js/batch-core.js?v=4"></script>
-  <script src="./assets/js/geo-io.js?v=1"></script>
-  <script src="./assets/js/batch.js?v=10"></script>
-  <script src="./assets/js/sheet.js?v=4"></script>
+  <script src="./assets/js/geo-io.js?v=2"></script>
+  <script src="./assets/js/gis-export.js?v=2"></script>
+  <script src="./assets/js/batch.js?v=11"></script>
+  <script src="./assets/js/sheet.js?v=5"></script>
   <script src="./assets/js/scan-core.js?v=2"></script>
   <script src="./assets/js/scan.js?v=2"></script>
   <script src="./assets/js/tips.js?v=1"></script>

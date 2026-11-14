@@ -13,7 +13,7 @@
  *   repaired   rows the page rebuilt with Repair, so the exports include them
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=2", "repair-engine.js?v=7", "batch-core.js?v=4", "geo-io.js?v=2");
+importScripts("core.js?v=2", "repair-engine.js?v=7", "pinpoint.js?v=1", "batch-core.js?v=5", "geo-io.js?v=2");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads

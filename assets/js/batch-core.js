@@ -8,11 +8,11 @@
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory(require("./core.js"), require("./repair-engine.js"));
+    module.exports = factory(require("./core.js"), require("./repair-engine.js"), require("./pinpoint.js"));
   } else {
-    root.CordifyBatchCore = factory(root.CordifyCore, root.CordifyRepair);
+    root.CordifyBatchCore = factory(root.CordifyCore, root.CordifyRepair, root.CordifyPinpoint);
   }
-})(typeof self !== "undefined" ? self : this, function (C, R) {
+})(typeof self !== "undefined" ? self : this, function (C, R, P) {
   "use strict";
 
   // Row results, small enough to hold millions of them in a typed array.
@@ -76,10 +76,19 @@
     return { error: NOT_VALID(lat === null ? "latitude" : "longitude"), mistyped: true };
   }
 
+  // A value that could not be read: say which character is wrong, when that can be found.
+  // Missing values and swapped columns keep their own message.
+  function pinned(res, text, role) {
+    if (res.error === undefined || !P || /swapped|missing|no numbers/.test(res.error)) return res;
+    const r = P.explain(text, role);
+    if (r.errors) res.error = (role ? `${role === "lat" ? "latitude" : "longitude"} cell, ` : "") + r.summary;
+    return res;
+  }
+
   function readRow(r, cfg) {
     if (cfg.mode === "one") {
       if (BLANK(r[cfg.one])) return { empty: true };
-      return readPair(String(r[cfg.one]));
+      return pinned(readPair(String(r[cfg.one])), String(r[cfg.one]));
     }
     const a = r[cfg.lat], b = r[cfg.lon];
     if (BLANK(a) && BLANK(b)) return { empty: true };
@@ -89,7 +98,7 @@
     // Swapped columns?
     const sa = readOne(String(b), "lat"), so = readOne(String(a), "lon");
     if (sa.value !== undefined && so.value !== undefined) return { error: "latitude and longitude look swapped (columns the wrong way round?)", mistyped: true };
-    return { error: la.error || lo.error, mistyped: la.mistyped || lo.mistyped };
+    return pinned({ error: la.error || lo.error, mistyped: la.mistyped || lo.mistyped }, String(la.error ? a : b), la.error ? "lat" : "lon");
   }
 
   const statusOf = res => res.empty ? EMPTY : res.lat !== undefined ? OK : res.mistyped ? MISTYPED : FAILED;

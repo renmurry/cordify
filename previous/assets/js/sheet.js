@@ -417,9 +417,7 @@
     $("sheet-card").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  /* ---------- export for GIS: every sheet, every format, in folders ---------- */
-
-  const safe = n => String(n).replace(/[\\/:*?"<>|]+/g, "_").trim() || "sheet";
+  /* ---------- export for GIS (the shared dialog in gis-export.js) ---------- */
 
   // The sheet as a plain table: every column, every row.
   function tableOf(st) {
@@ -432,125 +430,37 @@
     return { head, rows };
   }
 
-  // [ { path, data } ] for one sheet. Formats whose library is missing are left out and named in `skipped`.
-  async function sheetFiles(name, st, skipped) {
-    const IO = window.CordifyGeoIO, t = tableOf(st), base = safe(name), files = [];
-    const text = v => v instanceof Date ? stamp(v.getTime()) : v;
-    const pts = t.rows.filter(x => x.r.lat != null && x.r.lon != null);
-    const props = x => t.head.map((h, j) => [ h, text(x.values[j]) ]);
-    let kml = "";
-    for (const fmt of [ "kml", "geojson", "gpx" ]) {
-      const w = IO.textWriter(fmt, name);
-      const s = w.head + pts.map((x, i) => w.point(x.r.name || `Point ${i + 1}`, x.r.lat, x.r.lon, props(x))).join("") + w.tail;
-      files.push({ path: `${fmt}/${base}.${w.ext}`, data: s });
-      if (fmt === "kml") kml = s;
-    }
-    if (typeof JSZip !== "undefined") {
-      const z = new JSZip();
-      z.file("doc.kml", kml);
-      files.push({ path: `kmz/${base}.kmz`, data: await z.generateAsync({ type: "uint8array", compression: "DEFLATE" }) });
-    } else skipped.add("KMZ");
-    const cell = window.CordifyBatchCore.csvCell;
-    files.push({ path: `csv/${base}.csv`, data: "\uFEFF" + [ t.head ].concat(t.rows.map(x => x.values.map(text))).map(r => r.map(c => cell(c)).join(",")).join("\n") + "\n" });
-    if (typeof XLSX !== "undefined") {
-      const ws = XLSX.utils.aoa_to_sheet([ t.head ].concat(t.rows.map(x => x.values)), { cellDates: true, dateNF: "yyyy-mm-dd hh:mm" });
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Points");
-      files.push({ path: `excel/${base}.xlsx`, data: new Uint8Array(XLSX.write(wb, { type: "array", bookType: "xlsx" })) });
-    } else skipped.add("Excel");
-    try {
-      const pkg = IO.gpkg(await window.CordifyBatch.loadSql());
-      const tb = pkg.table(name, t.head.map(h => ({ name: h, type: IO.NUMERIC.test(h) ? "DOUBLE" : "TEXT" })));
-      pts.forEach(x => tb.point(x.r.lat, x.r.lon, x.values.map(text)));
-      files.push({ path: `geopackage/${base}.gpkg`, data: pkg.finish() });
-    } catch (e) {
-      skipped.add("GeoPackage");
-    }
-    if (st.extraCols.includes("Document")) {
-      const tally = new Map();
-      for (const r of st.rows) {
-        const k = `${r.extra && r.extra.Document || ""}\u0000${r.extra && r.extra.Page || ""}`;
-        tally.set(k, (tally.get(k) || 0) + 1);
-      }
-      files.push({ path: "sources.csv", data: "\uFEFFDocument,Page,Points\n" + [ ...tally ].map(([ k, n ]) => k.split("\u0000").map(c => cell(c)).concat(n).join(",")).join("\n") + "\n" });
-    }
-    files.push({ path: "README.txt", data: [
-      `Cordify export: ${name}`,
-      `Made ${stamp(Date.now())}. ${pts.length} point${pts.length === 1 ? "" : "s"}${t.rows.length > pts.length ? `, plus ${t.rows.length - pts.length} row(s) without a coordinate (in the CSV and Excel files only)` : ""}.`,
-      "All coordinates are WGS 84 latitude/longitude (EPSG:4326).",
-      "",
-      "geopackage/  one file for QGIS or ArcGIS, coordinate system included",
-      "geojson/     for QGIS, web maps and most GIS tools",
-      "kml/, kmz/   for Google Earth",
-      "gpx/         waypoints for GPS units and field apps",
-      "csv/, excel/ the full table, every column",
-      st.extraCols.includes("Document") ? "sources.csv  which document and page each point came from" : ""
-    ].filter((l, i, a) => l !== "" || a[i - 1] !== "").join("\r\n") + "\r\n" });
-    return files;
-  }
-
-  function saveBlob(name, blob) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      a.remove();
-      URL.revokeObjectURL(url);
-    }, 300);
-  }
-
-  // One folder per sheet, one folder per format inside it. As a zip, or straight into a
-  // folder you pick (only some desktop browsers can do that).
-  async function exportAll(toFolder) {
-    let dir = null;
-    if (toFolder) {
-      try {
-        dir = await window.showDirectoryPicker({ mode: "readwrite" });
-      } catch (e) {
-        return;   // the picker was closed
-      }
-    }
-    if (typeof JSZip === "undefined" && !dir) {
-      note("The zip library did not load, so the export can't be bundled. Reload the page and try again.", "bad");
+  // Every sheet, for the export: its table, and (for scanned points) which document each came from.
+  async function openGisExport() {
+    if (!window.CordifyGisExport) {
+      note("The export did not load. Reload the page and try again.", "bad");
       return;
     }
-    note("Preparing the export…");
-    const all = [], skipped = new Set();
-    let sheets = 0;
-    try {
-      for (const s of book.list) {
-        const st = s.id === book.active ? state : shape(await store.get(keyOf(s.id))) || blank();
-        if (!st.rows.some(r => r.lat != null && r.lon != null)) continue;
-        sheets++;
-        (await sheetFiles(s.name, st, skipped)).forEach(f => all.push({ path: `${safe(s.name)}/${f.path}`, data: f.data }));
-      }
-      if (!all.length) {
-        note("There are no points to export yet.", "warn");
-        return;
-      }
-      const root = `Cordify export ${stamp(Date.now()).slice(0, 10)}`;
-      if (dir) {
-        const top = await dir.getDirectoryHandle(root, { create: true });
-        for (const f of all) {
-          const parts = f.path.split("/");
-          let d = top;
-          for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p, { create: true });
-          const w = await (await d.getFileHandle(parts[parts.length - 1], { create: true })).createWritable();
-          await w.write(f.data);
-          await w.close();
+    const cell = window.CordifyBatchCore.csvCell;
+    const datasets = [];
+    for (const s of book.list) {
+      const st = s.id === book.active ? state : shape(await store.get(keyOf(s.id))) || blank();
+      if (!st.rows.length) continue;
+      const t = tableOf(st);
+      const extras = [];
+      if (st.extraCols.includes("Document")) {
+        const tally = new Map();
+        for (const r of st.rows) {
+          const k = `${r.extra && r.extra.Document || ""}\u0000${r.extra && r.extra.Page || ""}`;
+          tally.set(k, (tally.get(k) || 0) + 1);
         }
-      } else {
-        const zip = new JSZip();
-        all.forEach(f => zip.file(`${root}/${f.path}`, f.data));
-        saveBlob(`${root}.zip`, await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
+        extras.push({ path: "sources.csv", data: "\uFEFFDocument,Page,Points\n" + [ ...tally ].map(([ k, n ]) => k.split("\u0000").map(c => cell(c)).concat(n).join(",")).join("\n") + "\n" });
       }
-      note(`Exported ${sheets} sheet${sheets === 1 ? "" : "s"} (${all.length} files) ${dir ? `into the folder “${root}”` : `as “${root}.zip”`}.` + (skipped.size ? ` Left out: ${[ ...skipped ].join(", ")} (its library did not load).` : ""), skipped.size ? "warn" : "good");
-    } catch (e) {
-      note("The export could not be written. Try again.", "bad");
+      datasets.push({
+        name: s.name, head: t.head, extras,
+        rows: t.rows.map((x, i) => ({ lat: x.r.lat, lon: x.r.lon, values: x.values, rowNo: i + 1, reason: x.r.lat == null ? "no coordinate" : "" }))
+      });
     }
+    if (!datasets.some(d => d.rows.some(r => r.lat != null))) {
+      note("There are no points to export yet.", "warn");
+      return;
+    }
+    window.CordifyGisExport.open({ fileName: book.list.length > 1 ? "Cordify sheets" : (book.list[0] || {}).name || "Cordify sheet", datasets });
   }
 
   /* ---------- wiring ---------- */
@@ -592,9 +502,7 @@
       render();
     });
     $("sheet-delete").addEventListener("click", deleteSheet);
-    $("sheet-export").addEventListener("click", () => exportAll(false));
-    $("sheet-export-folder").hidden = typeof window.showDirectoryPicker !== "function";
-    $("sheet-export-folder").addEventListener("click", () => exportAll(true));
+    $("sheet-export").addEventListener("click", openGisExport);
     $("sheet-load").addEventListener("change", onLoadFile);
     $("sheet-clear").addEventListener("click", () => {
       if (!state.rows.length) return;
