@@ -371,17 +371,6 @@
 
   /* ---------- the tab ---------- */
 
-  function showTab() {
-    [ "convert-tab", "history-tab", "map-tab", "repair-tab" ].forEach(id => {
-      const el = $(id);
-      if (el) el.style.display = "none";
-    });
-    document.querySelectorAll(".tabs .tab-btn").forEach(b => b.classList.remove("is-active"));
-    $("tab-scan").classList.add("is-active");
-    $("scan-tab").style.display = "";
-    renderAdd();
-  }
-
   function init() {
     const box = $("advanced-mode"), tab = $("tab-scan");
     if (!box || !tab || !$("scan-tab")) return;
@@ -392,13 +381,10 @@
     tab.hidden = !on;
     box.addEventListener("change", () => {
       tab.hidden = !box.checked;
-      if (!box.checked && $("scan-tab").style.display !== "none") $("tab-convert").click();
+      if (!box.checked && window.CordifyTabs.current() === "scan") window.CordifyTabs.show("convert");
     });
-    tab.addEventListener("click", showTab);
-    [ "tab-convert", "tab-map", "tab-history", "tab-repair" ].forEach(id => $(id)?.addEventListener("click", () => {
-      $("scan-tab").style.display = "none";
-      tab.classList.remove("is-active");
-    }));
+    // Showing and hiding the tabs is tabs.js's job; the sheet list is refreshed when this tab is shown.
+    window.CordifyTabs.onShow("scan", renderAdd);
     $("scan-file").addEventListener("change", onFiles);
     $("scan-cancel").addEventListener("click", () => {
       state.cancelled = true;
