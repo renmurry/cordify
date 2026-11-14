@@ -94,7 +94,8 @@
     for (const pm of all(doc, "Placemark")) {
       const props = {};
       const desc = textOf(pm, "description");
-      if (desc) props.description = desc;
+      // Cordify's own pin table repeats the data fields; reading it would add a column.
+      if (desc && !desc.includes(`class="${PIN_TABLE}"`)) props.description = desc;
       all(pm, "Data").forEach(d => { props[d.getAttribute("name") || "data"] = textOf(d, "value"); });
       all(pm, "SimpleData").forEach(d => { props[d.getAttribute("name") || "data"] = d.textContent.trim(); });
       const name = textOf(pm, "name");
@@ -134,8 +135,44 @@
 
   // Pin colours for Google Earth, the same as Cordify's review table (KML colours are aabbggrr).
   const KML_COLOURS = { ok: "ff327d2e", fixed: "ff0097c9", check: "ff007be0", bad: "ff2828c6", confirmed: "ffc06515" };
+  // The pop-up shows only the pin's table (no directions links, no repeated name).
+  const BALLOON = "<BalloonStyle><text>$[description]</text></BalloonStyle>";
   const KML_STYLES = Object.entries(KML_COLOURS).map(([ id, c ]) =>
-    `<Style id="${id}"><IconStyle><color>${c}</color><scale>0.9</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>`).join("");
+    `<Style id="${id}"><IconStyle><color>${c}</color><scale>0.9</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>${BALLOON}</Style>`).join("") +
+    `<Style id="pin">${BALLOON}</Style>`;
+
+  // A pin's columns as a table in its description. Every viewer shows a description; some
+  // ignore KML data fields. The location is one row, an "OK" status is left out, and the typed
+  // coordinate is left out when the pin is green (it says no more than the location then).
+  // The class marks the table so that reading the file back skips it.
+  const PIN_TABLE = "cordify-pin";
+  const LOCATION = /^(Lat|Lon)_(DD|DMS|DDM)$/;
+  const PIN_LABELS = { Convert_Status: "Status", Convert_Check: "Worth checking" };
+  const escHtml = s => String(s ?? "").replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c]))
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+  function pinTable(lat, lon, props, kind, typed) {
+    const get = k => {
+      const p = props.find(x => x[0] === k);
+      return p && p[1] != null ? String(p[1]).trim() : "";
+    };
+    const pair = f => get(`Lat_${f}`) && get(`Lon_${f}`) ? `${get(`Lat_${f}`)}, ${get(`Lon_${f}`)}` : "";
+    const where = (pair("DD") || `${+lat.toFixed(6)}, ${+lon.toFixed(6)}`) + [ "DMS", "DDM" ].map(pair).filter(Boolean).map(t => ` (${t})`).join("");
+    const green = kind === "ok" || kind === "confirmed";
+    const rows = [];
+    let placed = false;
+    for (const [ k, v ] of props) {
+      const t = v == null ? "" : String(v).trim();
+      if (!t || LOCATION.test(k) || (k === "Convert_Status" && t === "OK") || (green && typed && typed.includes(k))) continue;
+      if (!placed && PIN_LABELS[k]) {
+        rows.push([ "Location", where ]);
+        placed = true;
+      }
+      rows.push([ PIN_LABELS[k] || String(k).replace(/\s+/g, " ").trim(), t ]);
+    }
+    if (!placed) rows.push([ "Location", where ]);
+    return `<table class="${PIN_TABLE}" border="1" cellpadding="3" style="border-collapse:collapse;font-family:sans-serif;font-size:12px">` +
+      rows.map(([ k, v ]) => `<tr><th align="left" style="background:#eee">${escHtml(k)}</th><td>${escHtml(v).replace(/\r?\n/g, "<br>")}</td></tr>`).join("") + "</table>";
+  }
 
   const escXml = s => String(s ?? "").replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[c]))
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
@@ -144,8 +181,11 @@
   /*
    * format: "geojson" | "kml" | "gpx". Returns { head, point(name, lat, lon, props), tail, ext, mime }
    * where props is a list of [ key, value ] pairs. Build the file as head + points + tail.
+   * opts (KML): colour: false for plain pins even when a kind is given; typed: the names of
+   * the columns the coordinate was typed in.
    */
-  function textWriter(format, title) {
+  function textWriter(format, title, opts) {
+    const o = opts || {};
     let first = true;
     if (format === "geojson") {
       return {
@@ -168,7 +208,8 @@
         // kind ("ok", "fixed", "check", "bad", "confirmed") colours the pin; leave it out for plain pins.
         point(name, lat, lon, props, kind) {
           const data = props.filter(p => p[1] !== "" && p[1] != null).map(([ k, v ]) => `<Data name="${escXml(k)}"><value>${escXml(v)}</value></Data>`).join("");
-          return `<Placemark><name>${escXml(name)}</name>${kind && KML_COLOURS[kind] ? `<styleUrl>#${kind}</styleUrl>` : ""}${data ? `<ExtendedData>${data}</ExtendedData>` : ""}<Point><coordinates>${num(lon)},${num(lat)},0</coordinates></Point></Placemark>\n`;
+          const style = o.colour !== false && kind && KML_COLOURS[kind] ? kind : "pin";
+          return `<Placemark><name>${escXml(name)}</name><description><![CDATA[${pinTable(lat, lon, props, kind, o.typed)}]]></description><styleUrl>#${style}</styleUrl>${data ? `<ExtendedData>${data}</ExtendedData>` : ""}<Point><coordinates>${num(lon)},${num(lat)},0</coordinates></Point></Placemark>\n`;
         },
         tail: "</Document></kml>\n"
       };
