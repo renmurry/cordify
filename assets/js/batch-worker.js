@@ -13,7 +13,7 @@
  *   repaired   rows the page rebuilt with Repair, so the exports include them
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=3", "repair-engine.js?v=7", "pinpoint.js?v=3", "systems.js?v=3", "batch-core.js?v=8", "geo-io.js?v=2");
+importScripts("core.js?v=3", "repair-engine.js?v=7", "pinpoint.js?v=3", "systems.js?v=3", "batch-core.js?v=8", "geo-io.js?v=3");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads
@@ -271,13 +271,14 @@ async function exportGeo(m) {
   const keepName = n => !m.keep || m.keep.includes(n);
   const addIdx = added.map((n, j) => j).filter(j => keepName(added[j]));
   let keepIdx = [];
+  const typed = [];   // the columns the coordinate was typed in, named once the header is read
   const isPkg = m.format === "gpkg";
   let pkg = null, tb = null, w = null;
   if (isPkg) {
     importScripts(m.sqlJs + "sql-wasm.js");
     pkg = G.gpkg(await self.initSqlJs({ locateFile: f => m.sqlJs + f }));
   } else {
-    w = G.textWriter(m.format, m.title || "Cordify");
+    w = G.textWriter(m.format, m.title || "Cordify", { colour: m.colour, typed });
   }
   const blobs = [];
   let parts = w ? [ w.head ] : [], size = 0, head = null, nameCol = -1, i = 0;
@@ -291,6 +292,7 @@ async function exportGeo(m) {
     if (!head) {
       head = B.parseCsvRecord(text, d).map((c, j) => c.replace(/\s+/g, " ").trim() || `Column ${j + 1}`);
       nameCol = G.labelColumn(head);
+      typed.push(...(big.cfg.mode === "one" ? [ big.cfg.one ] : [ big.cfg.lat, big.cfg.lon ]).map(j => head[j]));
       keepIdx = head.map((h, j) => j).filter(j => keepName(head[j]));
       if (isPkg) tb = pkg.table(m.title, keepIdx.map(j => ({ name: head[j], type: "TEXT" })).concat(addIdx.map(j => ({ name: added[j], type: G.NUMERIC.test(added[j]) ? "DOUBLE" : "TEXT" }))));
       return;
@@ -307,7 +309,7 @@ async function exportGeo(m) {
       return;
     }
     const name = nameCol >= 0 && (fields[nameCol] || "").trim() ? fields[nameCol] : `Row ${big.recNo[k]}`;
-    const s = w.point(name, res.lat, res.lon, keepIdx.map(j => [ head[j], fields[j] ]).concat(addIdx.map(j => [ added[j], cols[j][1] ])), m.colour ? B.kindOf(res) : undefined);
+    const s = w.point(name, res.lat, res.lon, keepIdx.map(j => [ head[j], fields[j] ]).concat(addIdx.map(j => [ added[j], cols[j][1] ])), B.kindOf(res));
     parts.push(s);
     size += s.length;
     if (size > 4e6) flush();

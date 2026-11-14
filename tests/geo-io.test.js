@@ -57,7 +57,33 @@ expect("column names are made safe and unique", same(G.columnNames([ "ID", "id",
 
 w = G.textWriter("kml", "t");
 text = w.head + w.point("A", 26.5, 95.25, [], "bad") + w.point("B", 26.6, 95.3, []) + w.tail;
-expect("KML has a style per colour and a pin can use one", /<Style id="bad">/.test(text) && /<Style id="ok">/.test(text) && /<name>A<\/name><styleUrl>#bad<\/styleUrl>/.test(text) && /<name>B<\/name><Point>/.test(text));
+expect("KML has a style per colour and a pin can use one", /<Style id="bad">/.test(text) && /<Style id="ok">/.test(text) && /<name>A<\/name><description>.*?<\/description><styleUrl>#bad<\/styleUrl>/.test(text) && /<name>B<\/name><description>.*?<\/description><styleUrl>#pin<\/styleUrl><Point>/.test(text), text);
+expect("KML pop-ups show only the table", (text.match(/<BalloonStyle><text>\$\[description\]<\/text><\/BalloonStyle>/g) || []).length === 6);
+
+/* ---------- the pin's pop-up table ---------- */
+
+const pin = (t, name) => {
+  const m = t.split("<Placemark>").find(p => p.startsWith(`<name>${name}</name>`));
+  return m ? m.match(/<!\[CDATA\[([\s\S]*?)\]\]>/)[1] : "";
+};
+const rowsOf = html => [ ...html.matchAll(/<tr><th[^>]*>([\s\S]*?)<\/th><td>([\s\S]*?)<\/td><\/tr>/g) ].map(m => [ m[1], m[2] ]);
+const farm = [ [ "Farmer", "Farmer A" ], [ "Geo\nCo-ordinates", "26°4′12.7″ N\n94°48′4.7″ E" ], [ "Remarks", "" ], [ "Problems & suggestions", "Road <needed>" ],
+  [ "Lat_DD", "26.070194" ], [ "Lon_DD", "94.801306" ], [ "Lat_DMS", "26° 4' 12.70\" N" ], [ "Lon_DMS", "94° 48' 4.70\" E" ], [ "Convert_Status", "OK" ], [ "Convert_Check", "" ] ];
+w = G.textWriter("kml", "t", { typed: [ "Geo\nCo-ordinates" ] });
+text = w.head + w.point("Farmer A", 26.070194, 94.801306, farm, "ok")
+  + w.point("Farmer B", 26.064456, 94.799819, farm.map(p => p[0] === "Convert_Status" ? [ p[0], "Best guess - check" ] : p[0] === "Convert_Check" ? [ p[0], "marks left out" ] : p), "check") + w.tail;
+let rows = rowsOf(pin(text, "Farmer A"));
+expect("pin table: green pin keeps the columns, one location row, no OK, no typed value", same(rows.map(r => r[0]), [ "Farmer", "Problems &amp; suggestions", "Location" ]), rows);
+expect("pin table: location joins decimal and DMS", rows[2][1] === "26.070194, 94.801306 (26° 4&#39; 12.70&quot; N, 94° 48&#39; 4.70&quot; E)", rows[2]);
+expect("pin table: values are escaped", rows[1][1] === "Road &lt;needed&gt;", rows[1]);
+expect("pin table: the data fields keep every column", text.includes('<Data name="Lat_DD">') && text.includes('<Data name="Convert_Status"><value>OK</value>'));
+rows = rowsOf(pin(text, "Farmer B"));
+expect("pin table: an orange pin shows the typed value, the status and the check", same(rows.map(r => r[0]), [ "Farmer", "Geo Co-ordinates", "Problems &amp; suggestions", "Location", "Status", "Worth checking" ]), rows);
+expect("pin table: line breaks kept", rows[1][1] === "26°4′12.7″ N<br>94°48′4.7″ E", rows[1]);
+w = G.textWriter("kml", "t", { colour: false });
+text = w.head + w.point("C", 26.5, 95.25, [ [ "ID", "7" ] ], "ok") + w.tail;
+expect("pin table: plain pins when colour is off; location from the point when no columns hold it", /<styleUrl>#pin<\/styleUrl>/.test(text) && same(rowsOf(pin(text, "C")), [ [ "ID", "7" ], [ "Location", "26.5, 95.25" ] ]), text);
+expect("pin table: marked so reading the file back can skip it", pin(text, "C").startsWith('<table class="cordify-pin"'));
 
 /* ---------- Shapefile (read back by the published format, byte by byte) ---------- */
 

@@ -83,8 +83,10 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   Shapefile, GeoJSON, KML, KMZ, GPX, CSV, Excel) with the columns you choose,
   as one zip (or a folder you pick) with a folder per sheet and per format.
   Pins and Excel rows are coloured by result, and rows without a coordinate
-  are listed in their own file so none go missing. The same export is in
-  Repair and on the sheet.
+  are listed in their own file so none go missing. Clicking a KML or KMZ pin
+  shows its columns as a table in any viewer, with the location on one row;
+  an "OK" status, and the typed coordinate on a green pin, are left out.
+  The same export is in Repair and on the sheet.
 - **History** — every conversion is saved locally in your browser (in
   IndexedDB, so tens of thousands fit). You can
   review, export (JSON/CSV), or clear it.

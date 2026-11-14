@@ -102,8 +102,9 @@
       say(`${ds.name}: writing…`);
       for (const fmt of [ "geojson", "kml", "gpx" ]) {
         if (!want(fmt) && !(fmt === "kml" && want("kmz"))) continue;
-        const w = G.textWriter(fmt, ds.name);
-        const text = w.head + pts.map((r, n) => w.point(label(r, n), +r.lat, +r.lon, props(r), choice.colour ? r.kind : undefined)).join("") + w.tail;
+        // The pin's result is always passed: it decides what the pop-up shows, even on plain pins.
+        const w = G.textWriter(fmt, ds.name, { colour: choice.colour, typed: ds.typed });
+        const text = w.head + pts.map((r, n) => w.point(label(r, n), +r.lat, +r.lon, props(r), r.kind || undefined)).join("") + w.tail;
         if (want(fmt)) files.push({ path: `${dir}/${fmt}/${file}.${w.ext}`, data: text });
         if (fmt === "kml" && want("kmz")) {
           const z = new JSZip();
