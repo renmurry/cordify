@@ -6,7 +6,7 @@
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
 // This copy's folder on the site, e.g. /cordify/
 const BASE = new URL('./', self.location).pathname;
-const CACHE_NAME = 'cordify-cache-v28';
+const CACHE_NAME = 'cordify-cache-v29';
 const PRECACHE = [
   './',
   './index.html',
@@ -92,8 +92,11 @@ self.addEventListener('fetch', event => {
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req);
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, fresh.clone());
+        // Only a good copy is stored: a 404 or 500 during a deploy must never replace a working file.
+        if (fresh.ok) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(req, fresh.clone());
+        }
         return fresh;
       } catch (e) {
         const cached = await caches.match(req, { ignoreSearch: true });

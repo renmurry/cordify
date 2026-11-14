@@ -91,6 +91,13 @@ expect("batch: Easting / Northing columns are found", (() => { const c = B.detec
 
 expect("batch: a column of UTM cells with zones is found", (() => { const c = B.detect([ "Name", "Grid" ], [ [ "A", "46R 684557 2856045" ], [ "B", "46RFP8455656044" ] ]); return c.found && c.mode === "one" && c.one === 1; })());
 
+// The <select> keys Batch and Repair use for a system, there and back
+expect("every choice survives key -> system", S.choices().every(sys => JSON.stringify(S.fromKey(S.keyOf(sys))) === JSON.stringify(sys)));
+expect("121 + 3 choices", S.choices().length === 124);
+expect("utm:46:N -> UTM zone 46N", JSON.stringify(S.fromKey("utm:46:N")) === JSON.stringify({ kind: "utm", zone: 46, south: false }));
+expect("utm:33:S -> southern", S.fromKey("utm:33:S").south === true);
+expect("a bad key gives nothing", S.fromKey("") === null && S.fromKey("utm:61:N") === null && S.fromKey("nonsense") === null && S.fromKey(undefined) === null);
+
 // Datum
 if (proj4) {
   const w = S.toWgs84(25.81, 94.84, "kalianpur1937");

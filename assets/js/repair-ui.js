@@ -820,11 +820,7 @@
       box.innerHTML = "";
       return;
     }
-    const keyOf = sys => sys.kind === "utm" ? `utm:${sys.zone}:${sys.south ? "S" : "N"}` : sys.kind;
-    const all = [ { kind: "cell" }, { kind: "mercator" } ];
-    for (const south of [ false, true ]) for (let z = 1; z <= 60; z++) all.push({ kind: "utm", zone: z, south });
-    all.push({ kind: "radians" }, { kind: "swap" });
-    const opts = `<option value="">Choose…</option>` + all.map(sys => `<option value="${keyOf(sys)}">${esc(S.labelOf(sys))}</option>`).join("");
+    const opts = `<option value="">Choose…</option>` + S.choices().map(sys => `<option value="${S.keyOf(sys)}">${esc(S.labelOf(sys))}</option>`).join("");
     const many = new Set(state.rows.map(r => r.sheet)).size > 1;
     box.innerHTML = list.map(x => {
       const lab = many ? `“${esc(x.sheet)}”: ` : "";
@@ -846,9 +842,9 @@
     const sheet = row.dataset.sheet, x = state.systemList.find(y => y.sheet === sheet);
     if (act === "yes" && x && x.d && x.d.system) state.systems[sheet] = x.d.system;
     else if (act === "pick") {
-      const m = /^utm:(d+):([NS])$/.exec(e.target.value), k = e.target.value;
-      if (!k) return;
-      state.systems[sheet] = m ? { kind: "utm", zone: +m[1], south: m[2] === "S" } : { kind: k };
+      const sys = window.CordifySystems.fromKey(e.target.value);
+      if (!sys) return;
+      state.systems[sheet] = sys;
     } else if (act === "no" || act === "undo") {
       delete state.systems[sheet];
       if (act === "no") state.systemNo[sheet] = true;   // Undo: back to as typed, asked again
