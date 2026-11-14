@@ -829,10 +829,12 @@
     setTimeout(() => {
       const t = performance.now();
       state.results = R.repairRows(state.rows, { features: state.features, groupFeatures, digitFix: $("rp-digitfix").checked, estimated: state.estimated, places: state.places });
+      const habits = $("rp-habits-opt").checked && window.CordifyHabits ? useHabits() : null;
       state.decisions = new Map();
       state.page = 0;
       state.filter = "all";
-      setStatus("rp-run-status", `Done in ${((performance.now() - t) / 1000).toFixed(1)} s` + (state.estimated ? " — area estimated from correct rows, check results carefully" : ""), "good");
+      setStatus("rp-run-status", `Done in ${((performance.now() - t) / 1000).toFixed(1)} s` + (state.estimated ? " — area estimated from correct rows, check results carefully" : "") +
+        (habits ? `. Typing habits: ${habits.agree} rows agree with the reading chosen, ${habits.changed} read differently (orange), ${habits.conflict} flagged because the habit's reading is outside the boundary` : ""), "good");
       $("rp-review").hidden = false;
       $("rp-export").hidden = false;
       state.dirty = false;
@@ -874,6 +876,60 @@
     const pin = e.status === "failed" && window.CordifyPinpoint ? window.CordifyPinpoint.explainShown(state.rows[i].raw).map(x => x.r.summary).filter(Boolean).join("; ") : "";
     return e.res.notes.concat(pin ? [ pin ] : []).join("; ");
   }
+  /*
+   * Optional: rows with two possible readings, read the way the rest of their sheet was
+   * typed. When the habit agrees with Repair's reading, only a note is added. When it
+   * reads the row differently, that reading is used and marked to check. When the
+   * habit's reading is outside the boundary, nothing is chosen: the row is flagged.
+   */
+  function useHabits() {
+    const H = window.CordifyHabits, R = window.CordifyRepair;
+    const hrow = r => r.text != null ? { text: r.text } : { lat: r.latText ?? "", lon: r.lonText ?? "" };
+    const byGroup = new Map();
+    state.rows.forEach((r, i) => {
+      const g = r.group ?? "";
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(i);
+    });
+    const tally = { agree: 0, changed: 0, conflict: 0, found: [] };
+    const same = (c, d) => c && Math.abs(c.lat - d.lat) < 1e-7 && Math.abs(c.lon - d.lon) < 1e-7;
+    for (const [ g, ids ] of byGroup) {
+      const habits = H.learn(ids.map(i => hrow(state.rows[i])));
+      tally.found.push({ name: g, lines: H.summary(habits) });
+      for (const i of ids) {
+        const res = state.results[i];
+        if (![ "fixed", "choose", "failed" ].includes(res.status)) continue;
+        const d = H.decide(hrow(state.rows[i]), habits);
+        if (!d) continue;
+        const note = "typing habit: " + d.why;
+        const k = res.candidates.findIndex(c => same(c, d));
+        if (k >= 0 && k === res.chosen) {
+          res.notes = res.notes.concat("typing habit agrees: " + d.why);
+          tally.agree++;
+        } else if (k >= 0) {
+          const c = res.candidates[k];
+          Object.assign(res, { chosen: k, lat: c.lat, lon: c.lon, status: "choose", notes: [ note ].concat(c.notes) });
+          tally.changed++;
+        } else if (R.featureAt(state.features, d.lon, d.lat)) {
+          res.candidates = res.candidates.concat({ lat: d.lat, lon: d.lon, notes: [ note ], cost: 0, feature: -1, habit: "inside" });
+          Object.assign(res, { chosen: res.candidates.length - 1, lat: d.lat, lon: d.lon, status: "choose", notes: [ note ] });
+          tally.changed++;
+        } else {
+          // Outside the boundary: a place across the line, or a wrong degree digit. A person decides.
+          res.candidates = res.candidates.concat({ lat: d.lat, lon: d.lon, notes: [ note + " (outside the boundary)" ], cost: 0, feature: -1, habit: "outside" });
+          Object.assign(res, { status: "choose", chosen: -1, lat: null, lon: null });
+          res.notes = [ `the typing habit reads this as ${d.texts.join(", ")}, which is outside the boundary — a place just across the line, or a wrong degree digit? Choose a reading` ].concat(res.notes);
+          tally.conflict++;
+        }
+      }
+    }
+    const box = $("rp-habits-found");
+    $("rp-habits-list").innerHTML = tally.found.map(f => `<p><strong>${esc(f.name)}</strong></p><ul>` +
+      (f.lines.length ? f.lines.map(l => `<li>${esc(l)}</li>`).join("") : "<li>No habit is shared by enough rows to learn from.</li>") + "</ul>").join("");
+    box.hidden = !tally.found.length;
+    return tally;
+  }
+
   // The typed text with the wrong characters marked, for rows that are not plainly fine.
   const rawHtml = (raw, status) => status === "ok" || status === "empty" || !window.CordifyPinpoint ? esc(raw) : window.CordifyPinpoint.markup(raw, esc);
 
@@ -1036,8 +1092,8 @@
     if (res.candidates.length > 1 || res.status === "choose" || res.status === "fixed" || res.typed) {
       const kept = !!(d && d.keep);
       choice = `<select class="rp-choose" data-i="${i}" aria-label="Choose a reading">` +
-        (!res.candidates.length && !(d && (d.keep || d.rejected)) ? `<option value="" selected disabled>Choose…</option>` : "") +
-        res.candidates.map((c, j) => `<option value="${j}"${j === k && !kept ? " selected" : ""}>${fmt(c.lat)}, ${fmt(c.lon)}${c.distKm != null ? ` · ${c.distKm.toFixed(1)} km from village` : ""}</option>`).join("") +
+        ((!res.candidates.length || res.chosen < 0) && !(d && (d.chosen != null || d.keep || d.rejected)) ? `<option value="" selected disabled>Choose…</option>` : "") +
+        res.candidates.map((c, j) => `<option value="${j}"${j === k && !kept ? " selected" : ""}>${fmt(c.lat)}, ${fmt(c.lon)}${c.distKm != null ? ` · ${c.distKm.toFixed(1)} km from village` : ""}${c.habit ? ` · typing habit${c.habit === "outside" ? ", outside the boundary" : ""}` : ""}</option>`).join("") +
         (res.typed ? `<option value="typed"${kept ? " selected" : ""}>As typed: ${fmt(res.typed.lat)}, ${fmt(res.typed.lon)}</option>` : "") +
         `<option value="reject"${d && d.rejected ? " selected" : ""}>None of these</option></select>`;
     }
@@ -1561,6 +1617,15 @@
       }
     });
     $("rp-run").addEventListener("click", run);
+    // The typing-habits choice is remembered on this device (shared with Batch).
+    try {
+      $("rp-habits-opt").checked = localStorage.getItem("cordify_habits_v1") === "1";
+    } catch (e) {}
+    $("rp-habits-opt").addEventListener("change", e => {
+      try {
+        localStorage.setItem("cordify_habits_v1", e.target.checked ? "1" : "0");
+      } catch (err) {}
+    });
     $("rp-summary").addEventListener("click", e => {
       const b = e.target.closest("[data-filter]");
       if (b) {

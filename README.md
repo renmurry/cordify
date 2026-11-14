@@ -36,7 +36,13 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   that is wrong, marked in yellow, and says what it probably should be, for
   example "character 6: ’ is probably the decimal point — two readings fit:
   26°41.451’ or 26°41’45.1”". When two readings fit, both are given and
-  neither is chosen. Download the same workbook with the new
+  neither is chosen, unless "Use typing habits to choose between readings"
+  is ticked: then the reading that matches the other value in the same cell,
+  or the rows of the sheet typed the same way (the same ° ' " marks,
+  separator, N/E letters and elevation), is used and the row is marked
+  orange to check. The habits found are listed for each sheet. One sheet
+  often holds several habits, so the most common format is never used on
+  its own. The choice is remembered on the device. Download the same workbook with the new
   columns, or CSV (one per sheet, zipped, opens correctly in Excel).
   Converting runs in the background with a progress bar and a Cancel button.
   CSV files over 5 MB are never loaded whole: they are read from disk a piece
@@ -102,7 +108,10 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   remembered on the device like the boundary.
   The Excel export colours each row by its result, with a Legend sheet.
   Rows that are not plainly fine show the wrong characters marked in yellow,
-  and rows that could not be fixed say which character is wrong.
+  and rows that could not be fixed say which character is wrong. With
+  "Use typing habits" ticked, rows with two readings are read like the rest
+  of their sheet; where that reading is outside the boundary, nothing is
+  chosen and the row is flagged for you.
 - **Scan (Advanced mode)** — the Scan tab finds the coordinates written in
   images, PDFs and scanned pages. PDFs with real text are read exactly;
   scanned pages and photos are read with OCR (printed text reads well,
@@ -153,6 +162,7 @@ assets/js/repair-engine.js  Coordinate repair logic (no UI; also runs in Node)
 assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
 assets/js/batch.js       Batch convert (Convert tab): the screen
 assets/js/pinpoint.js    Points to the exact wrong character in a typed coordinate (no UI; also runs in Node)
+assets/js/habits.js      Typing habits: learns how a sheet was typed, to choose between two readings (no UI; also runs in Node)
 assets/js/batch-core.js  Batch convert: reading rows, finding columns, CSV (no UI; also runs in Node)
 assets/js/batch-worker.js Batch convert: background worker that does the converting
 assets/js/reference.js   Boundary and village locations kept on the device; reads village lists
@@ -172,6 +182,7 @@ tests/xlsx-color.test.js Excel colour tests
 tests/scan-core.test.js  Coordinate-finding tests
 tests/repair-engine.test.js  Repair tests
 tests/pinpoint.test.js   Wrong-character tests
+tests/habits.test.js     Typing-habit tests
 package.json             Test tooling only (the app needs no install)
 ```
 
