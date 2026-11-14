@@ -669,9 +669,16 @@ function initCordifyApp() {
       if (!raw) {
         return update(false);
       }
-      const parts = splitPair(raw);
-      const lat = parts ? parseCoord(parts[0], "lat") : null;
-      const lon = parts ? parseCoord(parts[1], "lon") : null;
+      let parts = splitPair(raw);
+      let lat = parts ? parseCoord(parts[0], "lat") : null;
+      let lon = parts ? parseCoord(parts[1], "lon") : null;
+      // UTM with its zone (46R 684557 2856045) or MGRS (46RFP8455656044): read as latitude/longitude.
+      const grid = (lat === null || lon === null) && window.CordifySystems ? window.CordifySystems.readCell(raw) : null;
+      if (grid) {
+        lat = grid.lat;
+        lon = grid.lon;
+        parts = [ String(+lat.toFixed(8)), String(+lon.toFixed(8)) ];
+      }
       if (lat === null || lon === null) {
         setInvalid(pairId, true);
         document.getElementById(isDms ? "dd_result" : "dms_result").value = "";

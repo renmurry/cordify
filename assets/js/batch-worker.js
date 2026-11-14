@@ -13,7 +13,7 @@
  *   repaired   rows the page rebuilt with Repair, so the exports include them
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=2", "repair-engine.js?v=7", "pinpoint.js?v=2", "batch-core.js?v=5", "geo-io.js?v=2");
+importScripts("core.js?v=2", "repair-engine.js?v=7", "pinpoint.js?v=3", "systems.js?v=2", "batch-core.js?v=8", "geo-io.js?v=2");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads
@@ -23,6 +23,14 @@ let big = null;   // the one large CSV being worked on
 function needProj(spec) {
   if (!spec || spec === "off" || spec === "utm" || typeof self.proj4 !== "undefined") return;
   if (/^epsg:32[67]\d\d$/i.test(spec)) return;
+  try {
+    importScripts(PROJ4);
+  } catch (e) {}
+}
+
+// A source datum other than WGS 84 is shifted with the projection library.
+function needDatum(datum) {
+  if (!datum || datum === "wgs84" || typeof self.proj4 !== "undefined") return;
   try {
     importScripts(PROJ4);
   } catch (e) {}
@@ -118,7 +126,8 @@ function convertColumns(m) {
   const n = m.a.length;
   const lat = new Float64Array(n), lon = new Float64Array(n), status = new Uint8Array(n), precision = new Float32Array(n);
   const errors = [];
-  const cfg = { mode: m.mode, one: 0, lat: 0, lon: 1 };
+  const cfg = { mode: m.mode, one: 0, lat: 0, lon: 1, system: m.system || null, datum: m.datum || null };
+  needDatum(cfg.datum);
   const row = [ null, null ];
   for (let i = 0; i < n; i++) {
     row[0] = m.a[i];
@@ -142,6 +151,7 @@ function convertColumns(m) {
 
 async function convertCsv(m) {
   const cfg = m.cfg, delim = m.delim;
+  needDatum(cfg.datum);
   const lat = grow(Float64Array), lon = grow(Float64Array), status = grow(Uint8Array), precision = grow(Float32Array);
   const starts = grow(Float64Array), ends = grow(Float64Array), recNo = grow(Uint32Array);
   const errors = new Map();

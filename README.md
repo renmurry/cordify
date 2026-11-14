@@ -42,7 +42,17 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   separator, N/E letters and elevation), is used and the row is marked
   orange to check. The habits found are listed for each sheet. One sheet
   often holds several habits, so the most common format is never used on
-  its own. The choice is remembered on the device. Download the same workbook with the new
+  its own. The choice is remembered on the device.
+  Other coordinate systems are recognised per sheet, never from one cell:
+  UTM or MGRS with the zone in the cell, Easting / Northing columns, Web
+  Mercator metres, radians, and latitude/longitude typed the wrong way round.
+  A missing UTM zone is found from the column name or from the boundary and
+  village locations saved in Repair (the only zone of 121 that puts the
+  points there); otherwise you pick it. Cordify always asks first ("these
+  look like UTM zone 46N … Read them this way?", Yes / Pick another / No) and
+  the choice can be undone. "Source datum" converts coordinates measured on
+  Everest / Kalianpur 1937 or 1975 (older Survey of India maps, about
+  300–400 m off in North-East India) to WGS 84. Download the same workbook with the new
   columns, or CSV (one per sheet, zipped, opens correctly in Excel).
   Converting runs in the background with a progress bar and a Cancel button.
   CSV files over 5 MB are never loaded whole: they are read from disk a piece
@@ -162,6 +172,7 @@ assets/js/repair-engine.js  Coordinate repair logic (no UI; also runs in Node)
 assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
 assets/js/batch.js       Batch convert (Convert tab): the screen
 assets/js/pinpoint.js    Points to the exact wrong character in a typed coordinate (no UI; also runs in Node)
+assets/js/systems.js     Other coordinate systems: UTM, MGRS, Web Mercator, radians, swapped, datums (no UI; also runs in Node)
 assets/js/habits.js      Typing habits: learns how a sheet was typed, to choose between two readings (no UI; also runs in Node)
 assets/js/batch-core.js  Batch convert: reading rows, finding columns, CSV (no UI; also runs in Node)
 assets/js/batch-worker.js Batch convert: background worker that does the converting
@@ -183,6 +194,7 @@ tests/scan-core.test.js  Coordinate-finding tests
 tests/repair-engine.test.js  Repair tests
 tests/pinpoint.test.js   Wrong-character tests
 tests/habits.test.js     Typing-habit tests
+tests/systems.test.js    Coordinate-system tests (made-up values)
 package.json             Test tooling only (the app needs no install)
 ```
 

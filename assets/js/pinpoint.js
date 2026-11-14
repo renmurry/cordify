@@ -305,6 +305,14 @@
     const { vals, seps } = valuesOf(toks, w);
     const problems = found.slice();
     const roles = [];
+    // Plain numbers in the hundreds of thousands are grid metres, not mistyped degrees.
+    const big = /^\s*[+-]?\d{6,}(?:\.\d+)?\s*$/;
+    const plainVals = vals.map(v => w.slice(v[0].at, v[v.length - 1].at + v[v.length - 1].len));
+    if (!found.length && plainVals.length === (role ? 1 : 2) && plainVals.every(t => big.test(t))) {
+      const at = vals[0][0].at, end = s.trimEnd().length;
+      const grid = [ { at, len: Math.max(1, end - at), kind: "error", grid: true, why: "these look like grid coordinates in metres (UTM or similar), not degrees", readings: [] } ];
+      return { problems: grid, errors: 1, summary: grid[0].why, text: s, values: null };
+    }
     // Pre-pass fixes become readings of their value.
     if (role) {
       if (vals.length > 1) {

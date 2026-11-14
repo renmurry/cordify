@@ -8,11 +8,11 @@
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory(require("./core.js"), require("./repair-engine.js"), require("./pinpoint.js"));
+    module.exports = factory(require("./core.js"), require("./repair-engine.js"), require("./pinpoint.js"), require("./systems.js"));
   } else {
-    root.CordifyBatchCore = factory(root.CordifyCore, root.CordifyRepair, root.CordifyPinpoint);
+    root.CordifyBatchCore = factory(root.CordifyCore, root.CordifyRepair, root.CordifyPinpoint, root.CordifySystems);
   }
-})(typeof self !== "undefined" ? self : this, function (C, R, P) {
+})(typeof self !== "undefined" ? self : this, function (C, R, P, S) {
   "use strict";
 
   // Row results, small enough to hold millions of them in a typed array.
@@ -85,7 +85,25 @@
     return res;
   }
 
+  // cfg.system: the sheet is in another coordinate system (UTM, radians…), read with systems.js.
+  // cfg.datum: the values are on an older datum and are shifted to WGS 84.
   function readRow(r, cfg) {
+    const res = cfg.system && S ? readSystem(r, cfg) : readDegrees(r, cfg);
+    if (res.lat === undefined || res.shifted || !cfg.datum || cfg.datum === "wgs84" || !S) return res;
+    const w = S.toWgs84(res.lat, res.lon, cfg.datum);
+    return w.error ? { error: w.error } : { ...res, lat: w.lat, lon: w.lon };
+  }
+
+  function readSystem(r, cfg) {
+    const cells = cfg.mode === "one" ? [ r[cfg.one] ] : [ r[cfg.lat], r[cfg.lon] ];
+    if (cells.every(BLANK)) return { empty: true };
+    if (cells.some(BLANK)) return { error: BLANK(cells[0]) ? "latitude is missing" : "longitude is missing" };
+    const p = S.read(cells.map(c => typeof c === "number" ? c : String(c)), cfg.system, cfg.datum);
+    if (p.error) return { error: `${p.error} (read as ${S.labelOf(cfg.system)})`, mistyped: true };
+    return p.shifted ? { lat: p.lat, lon: p.lon, precision: 1, shifted: true } : { lat: p.lat, lon: p.lon, precision: 1 };
+  }
+
+  function readDegrees(r, cfg) {
     if (cfg.mode === "one") {
       if (BLANK(r[cfg.one])) return { empty: true };
       return pinned(readPair(String(r[cfg.one])), String(r[cfg.one]));
@@ -167,6 +185,7 @@
   /* ---------- finding the coordinate column(s) ---------- */
 
   const COORD_ONE = /co-?ord|coordinate|geo|gps|location|lat.?\/?.?long|latlon|position/i;
+  const EASTW = /\beasting\b|^east\b/i, NORTHW = /\bnorthing\b|^north\b/i;
   const LATW = /\b(lat|latitude)\b|^y$/i, LONW = /\b(lon|lng|long|longitude)\b|^x$/i;
   const looksPair = v => {
     const t = String(v ?? "");
@@ -179,6 +198,9 @@
       const vals = data.map(r => r[j]).filter(v => !BLANK(v));
       return vals.length ? vals.filter(test).length / vals.length : 0;
     };
+    // Grid columns: Easting / Northing (read once the system is known).
+    const north = head.findIndex(x => NORTHW.test(x)), east = head.findIndex(x => EASTW.test(x));
+    if (north >= 0 && east >= 0 && north !== east) return { mode: "two", lat: north, lon: east, one: north, found: true, grid: true };
     const lat = head.findIndex(x => LATW.test(x) && !LONW.test(x));
     if (lat >= 0) {
       const key = head[lat].replace(LATW, "").replace(/[\s_.()-]+/g, "").toLowerCase();
@@ -196,6 +218,11 @@
       if (bestS >= 0.3) one = best;
     }
     if (one >= 0) return { mode: "one", one, lat: one, lon: Math.min(one + 1, head.length - 1), found: true };
+    // A column of UTM or MGRS cells with their zone (46R 684557 2856045, 46RFP8455656044).
+    if (S) {
+      const zoned = head.findIndex((_, j) => share(j, v => !!S.readCell(String(v))) >= 0.6);
+      if (zoned >= 0) return { mode: "one", one: zoned, lat: zoned, lon: Math.min(zoned + 1, head.length - 1), found: true, grid: true };
+    }
     return { mode: "two", lat: 0, lon: Math.min(1, head.length - 1), one: 0, found: false };
   }
 
