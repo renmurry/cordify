@@ -1,22 +1,22 @@
 {
- "built": "2026-11-14T05:35:24.478Z",
+ "built": "2026-11-14T05:50:46.076Z",
  "channels": [
   {
    "id": "latest",
    "label": "Latest",
    "path": "./",
-   "ref": "v3.8.2",
-   "version": "v3.8.2",
-   "commit": "e18316a",
+   "ref": "v3.8.3",
+   "version": "v3.8.3",
+   "commit": "9ba05e5",
    "date": "2026-11-14"
   },
   {
    "id": "previous",
    "label": "Previous",
    "path": "previous/",
-   "ref": "v3.8.1",
-   "version": "v3.8.1",
-   "commit": "8695454",
+   "ref": "v3.8.2",
+   "version": "v3.8.2",
+   "commit": "e18316a",
    "date": "2026-11-14"
   }
  ]
