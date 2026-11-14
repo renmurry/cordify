@@ -83,62 +83,26 @@ function initCordifyApp() {
           renderHistoryTable();
         }
       });
-      const convertTab = document.getElementById("convert-tab");
-      const historyTab = document.getElementById("history-tab");
-      const btnConvert = document.getElementById("tab-convert");
-      const btnHistory = document.getElementById("tab-history");
-      function setActive(btnOn, ...btnOffList) {
-        btnOn?.classList.add("is-active");
-        btnOffList.forEach(b => b?.classList.remove("is-active"));
-      }
-      const btnMap = document.getElementById("tab-map");
-      function switchTab(tab) {
-        if (convertTab) {
-          convertTab.style.display = "none";
-        }
-        if (historyTab) {
-          historyTab.style.display = "none";
-        }
-        const mapTabEl = document.getElementById("map-tab");
-        if (mapTabEl) {
-          mapTabEl.style.display = "none";
-        }
-        if (tab === "convert") {
-          if (convertTab) {
-            convertTab.style.display = "";
-          }
-          setActive(btnConvert, btnHistory, btnMap);
-        } else if (tab === "history") {
-          if (historyTab) {
-            historyTab.style.display = "";
-          }
-          setActive(btnHistory, btnConvert, btnMap);
-          renderHistoryTable();
-        } else if (tab === "map") {
-          if (mapTabEl) {
-            mapTabEl.style.display = "";
-          }
-          setActive(btnMap, btnConvert, btnHistory);
-          setTimeout(() => {
-            if (!_map) {
-              if (!initMap()) {
-                const mapEl = document.getElementById("map");
-                if (mapEl) {
-                  mapEl.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">Failed to load map. Please check your internet connection and try again.</div>';
-                }
-                return;
+      // Showing and hiding the tabs is tabs.js's job; this file only reacts when its tabs are shown.
+      const Tabs = window.CordifyTabs;
+      Tabs.onShow("history", renderHistoryTable);
+      Tabs.onShow("map", () => {
+        setTimeout(() => {
+          if (!_map) {
+            if (!initMap()) {
+              const mapEl = document.getElementById("map");
+              if (mapEl) {
+                mapEl.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">Failed to load map. Please check your internet connection and try again.</div>';
               }
+              return;
             }
-            if (_map && _map.invalidateSize) {
-              _map.invalidateSize(true);
-            }
-          }, 100);
-        }
-      }
-      btnConvert && (btnConvert.onclick = () => switchTab("convert"));
-      btnHistory && (btnHistory.onclick = () => switchTab("history"));
-      btnMap && (btnMap.onclick = () => switchTab("map"));
-      switchTab("convert");
+          }
+          if (_map && _map.invalidateSize) {
+            _map.invalidateSize(true);
+          }
+        }, 100);
+      });
+      Tabs.show("convert");
       document.getElementById("btn-dms2dd")?.addEventListener("click", () => updateDmsResult(true));
       document.getElementById("btn-dd2dms")?.addEventListener("click", () => updateDdResult(true));
       document.getElementById("btn-clear-dms")?.addEventListener("click", clearDmsInputs);

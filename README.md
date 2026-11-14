@@ -162,6 +162,7 @@ index.html              Main app page
 assets/css/styles.css    Styling (light + dark mode)
 assets/js/core.js        Reading, writing and projecting coordinates (no UI; also runs in Node)
 assets/js/grid.js        The "Also give Easting / Northing" picker
+assets/js/tabs.js        Shows one tab (Convert, Map, History, Repair, Scan) and hides the others
 assets/js/app.js         App logic: converter, history, map, exports
 assets/js/historyStore.js Conversion history (kept in IndexedDB)
 assets/js/db.js          IndexedDB helper for history and the sheet
