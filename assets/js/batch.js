@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=17");
+      worker = new Worker("./assets/js/batch-worker.js?v=18");
     } catch (e) {
       return null;
     }
@@ -161,11 +161,12 @@
       return null;
     }
     const buf = await file.arrayBuffer();
-    const wb = /\.csv$/i.test(file.name) ? XLSX.read(decodeText(buf).replace(/^﻿/, ""), { type: "string" }) : XLSX.read(buf, { type: "array" });
+    const wb = /\.csv$/i.test(file.name) ? XLSX.read(decodeText(buf).replace(/^﻿/, ""), { type: "string", cellNF: true }) : XLSX.read(buf, { type: "array", cellNF: true });
     state.workbook = wb;
     state.fileName = file.name.replace(/\.[^.]+$/, "");
     for (const name of wb.SheetNames) {
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true, blankrows: true });
+      BC().datesAsText(wb.Sheets[name], aoa, XLSX, ((wb.Workbook || {}).WBProps || {}).date1904, /\.csv$/i.test(file.name));
       const h = aoa.findIndex(r => r.some(c => String(c).trim() !== ""));
       if (h < 0) continue;
       const head = aoa[h].map((c, j) => String(c).replace(/\s+/g, " ").trim() || `Column ${j + 1}`);
@@ -964,8 +965,8 @@
       big: {
         name: state.fileName || "cordify", head: s.head.concat(added), points: out.ok + (out.repaired ? out.repaired.fixed + out.repaired.check : 0),
         formats: [ "gpkg", "geojson", "kml", "kmz", "gpx" ],
-        run: async (format, keep, colour) => {
-          const m = await ask({ type: "exportGeo", format, keep, colour, f: out.f, title: state.fileName, sqlJs: SQL_JS, gridSpec: gridOn() ? window.CordifyGrid.spec() : "off" });
+        run: async (format, keep, colour, label, table) => {
+          const m = await ask({ type: "exportGeo", format, keep, colour, label, table, f: out.f, title: state.fileName, sqlJs: SQL_JS, gridSpec: gridOn() ? window.CordifyGrid.spec() : "off" });
           if (!m.blob) throw new Error("nothing written");
           return m.blob;
         }

@@ -458,6 +458,8 @@ button:disabled, button:disabled:hover { opacity: .45; cursor: not-allowed; filt
 .gis-format.is-off { opacity: .55; cursor: not-allowed; }
 .gis-cols { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 180px; overflow: auto; padding: 2px; }
 .gis-cols .inline { font-size: .8125rem; }
+.gis-label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .875rem; }
+.gis-label select { max-width: 100%; }
 /* Batch: progress, and a preview that only draws the rows on screen */
 .batch-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 12px; }
 .batch-progress progress { flex: 1 1 220px; height: 10px; accent-color: var(--accent); }

@@ -1,24 +1,24 @@
 {
- "built": "2026-11-14T17:57:38.259Z",
+ "built": "2026-11-14T18:17:48.827Z",
  "channels": [
   {
    "id": "latest",
    "label": "Latest",
    "path": "./",
-   "ref": "v3.11.0",
-   "version": "v3.11.0",
-   "name": "",
-   "commit": "663a965",
+   "ref": "v3.12.0",
+   "version": "v3.12.0",
+   "name": "Exports",
+   "commit": "feee6f7",
    "date": "2026-11-14"
   },
   {
    "id": "previous",
    "label": "Previous",
    "path": "previous/",
-   "ref": "v3.10.0",
-   "version": "v3.10.0",
-   "name": "Fable",
-   "commit": "593b08a",
+   "ref": "v3.11.0",
+   "version": "v3.11.0",
+   "name": "",
+   "commit": "663a965",
    "date": "2026-11-14"
   }
  ]

@@ -343,9 +343,47 @@
     };
   }
 
+  /* ---------- dates ---------- */
+
+  // Excel keeps a date as a day count (46096 is 15 March 2026) and shows it through the
+  // cell's format. Read raw, the count would travel into every export. This writes each
+  // date cell of `aoa` (read from `ws` with header: 1) as 2026-03-15, 2026-03-15 14:30 or
+  // 14:30 — one way of writing that no one reads as month-first or day-first.
+  // X is the SheetJS library; date1904 is the workbook's date system. typed: the sheet came
+  // from text (CSV), so a date is kept exactly as it was typed.
+  function datesAsText(ws, aoa, X, date1904, typed) {
+    if (!ws || !ws["!ref"] || !X) return 0;
+    const range = X.utils.decode_range(ws["!ref"]);
+    const isDate = z => z && (X.SSF && X.SSF.is_date ? X.SSF.is_date(z) : /[dmyhs]/i.test(String(z).replace(/"[^"]*"|\[[^\]]*\]/g, "")));
+    const two = n => String(n).padStart(2, "0");
+    let n = 0;
+    for (const key of Object.keys(ws)) {
+      if (key[0] === "!") continue;
+      const c = ws[key];
+      if (!c || !(c.t === "d" || (c.t === "n" && isDate(c.z)))) continue;
+      const at = X.utils.decode_cell(key), row = aoa[at.r - range.s.r];
+      if (!row) continue;
+      if (typed && typeof c.w === "string") {
+        row[at.c - range.s.c] = c.w;
+        n++;
+        continue;
+      }
+      // a day count from 1900 (or 1904); a cell already read as a date is used as it is
+      const onlyTime = c.t === "n" && +c.v >= 0 && +c.v < 1;
+      const ms = c.t === "d" ? new Date(c.v).getTime() : Math.round((+c.v + (date1904 ? 1462 : 0) - 25569) * 864e5);
+      if (!Number.isFinite(ms)) continue;
+      const d = new Date(ms);
+      const date = `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}`;
+      const time = d.getUTCHours() || d.getUTCMinutes() ? `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}` : "";
+      row[at.c - range.s.c] = onlyTime ? time || "00:00" : time ? `${date} ${time}` : date;
+      n++;
+    }
+    return n;
+  }
+
   return {
     EMPTY, OK, FAILED, MISTYPED, BLANK, readOne, readPair, readRow, statusOf, rawOf, detect,
     precisionOf, qualityChecks, STATUS_COLS, kindOf, nice,
-    parseCsvRecord, splitCsvRecords, sniffDelimiter, csvCell, recordEnds, outCols, gridCells
+    parseCsvRecord, splitCsvRecords, sniffDelimiter, csvCell, recordEnds, outCols, gridCells, datesAsText
   };
 });

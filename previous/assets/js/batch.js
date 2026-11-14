@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=16");
+      worker = new Worker("./assets/js/batch-worker.js?v=17");
     } catch (e) {
       return null;
     }
@@ -942,7 +942,9 @@
           values: s.head.map((h, j) => r[j]).concat(outCols(res, out.f).map(c => c[1]))
         });
       }
-      return { name, head: s.head.concat(added), rows };
+      // typed: the columns the coordinate was typed in (left out of a green pin's pop-up)
+      const typed = (s.mode === "one" ? [ s.one ] : [ s.lat, s.lon ]).map(j => s.head[j]);
+      return { name, head: s.head.concat(added), typed, rows };
     });
   }
 
