@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=10");
+      worker = new Worker("./assets/js/batch-worker.js?v=11");
     } catch (e) {
       return null;
     }
@@ -451,7 +451,7 @@
         res.repaired === "fixed" ? `<span class="badge st-fixed">Repaired</span><br><span class="hint">${esc(res.check)}</span>` :
         res.repaired ? `<span class="badge st-choose">Best guess</span><br><span class="hint">${esc(res.check)}</span>` :
         res.check ? `<span class="badge st-choose">Check</span><br><span class="hint">${esc(res.check)}</span>` : '<span class="badge st-ok">OK</span>';
-      return `<tr class="${!ok ? "batch-fail" : res.repaired === "fixed" ? "batch-fixed" : res.repaired || res.check ? "batch-check" : ""}"><td class="hint">${multi ? esc(name) + " · " : ""}${rowNo}</td><td><pre class="raw">${esc(raw)}</pre></td>` +
+      return `<tr class="${!ok ? "batch-fail" : res.repaired === "fixed" ? "batch-fixed" : res.repaired || res.check ? "batch-check" : ""}"><td class="hint">${multi ? esc(name) + " · " : ""}${rowNo}</td><td><pre class="raw">${!ok || res.repaired ? pinMarkup(raw) : esc(raw)}</pre></td>` +
         cols.map(c => `<td class="num">${esc(c[1])}</td>`).join("") + `<td>${result}</td></tr>`;
     });
   }
@@ -700,6 +700,8 @@
   /* ---------- helpers ---------- */
 
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // The typed text with the wrong characters marked.
+  const pinMarkup = raw => window.CordifyPinpoint ? window.CordifyPinpoint.markup(raw, esc) : esc(raw);
 
   function download(name, blob) {
     const url = URL.createObjectURL(blob);
