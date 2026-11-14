@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Cordify — Coordinate Converter (DMS ⇄ DD)</title>
 
-  <link rel="stylesheet" href="./assets/css/styles.css?v=15">
+  <link rel="stylesheet" href="./assets/css/styles.css?v=16">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
@@ -17,13 +17,14 @@
   </script>
 </head>
 <body>
-<div class="cordify-channel-bar" style="padding:7px 14px;font:600 13px/1.45 system-ui,'Segoe UI',Roboto,sans-serif;background:#7a4a00;color:#fff;text-align:center">You are using the <b>Previous</b> version (v3.3.0, 2026-11-13). Use it if the latest version gives you trouble. It works online only. <a href="../" style="color:#fff;text-decoration:underline">Go to the latest version</a></div>
+<div class="cordify-channel-bar" style="padding:7px 14px;font:600 13px/1.45 system-ui,'Segoe UI',Roboto,sans-serif;background:#7a4a00;color:#fff;text-align:center">You are using the <b>Previous</b> version (v3.4.0, 2026-11-13). Use it if the latest version gives you trouble. It works online only. <a href="../" style="color:#fff;text-decoration:underline">Go to the latest version</a></div>
 <div class="app">
 
   <header class="app-header">
     <div class="brand">
       <button type="button" class="brand-name" id="brand-look">Cordify</button>
       <span class="brand-sub">DMS ⇄ decimal degrees</span>
+      <details class="version-menu" id="version-menu" hidden></details>
     </div>
     <nav class="tabs" aria-label="Sections">
       <button id="tab-convert" class="tab-btn is-active" type="button">Convert</button>
@@ -553,6 +554,7 @@
   <script src="./assets/js/repair-ui.js?v=8"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
   <script src="./assets/js/looks.js?v=1"></script>
+  <script src="./assets/js/versions.js?v=1"></script>
   <script src="./assets/js/batch-core.js?v=4"></script>
   <script src="./assets/js/geo-io.js?v=1"></script>
   <script src="./assets/js/batch.js?v=10"></script>

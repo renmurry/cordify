@@ -67,6 +67,31 @@ h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
 button.brand-name { padding: 4px 0; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
 .brand-sub { font-size: .875rem; color: var(--muted); }
 /* Swapping subtitle (brand-swap.js) */
+/* Version menu (versions.js): only on the live site, where channels.json lists the versions */
+.version-menu { position: relative; align-self: center; font-size: .75rem; }
+.version-menu > summary {
+  list-style: none; cursor: pointer; padding: 2px 9px; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.version-menu > summary::-webkit-details-marker { display: none; }
+.version-menu > summary::after { content: " ▾"; }
+.version-menu[open] > summary, .version-menu > summary:hover { border-color: var(--accent); color: var(--ink); }
+.version-tag { color: var(--accent); }
+.version-list {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 1300;
+  width: min(300px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(15, 40, 38, .25);
+}
+.version-list a { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: .8125rem; }
+.version-list a:hover { background: var(--bg); }
+.version-list a[aria-current] { background: var(--accent-soft); }
+.version-list span, .version-list small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.version-list .hint { margin: 6px 10px 2px; }
+/* Phones: the list spans the screen under the header instead of hanging off the pill. */
+@media (max-width: 640px) {
+  .version-menu { position: static; }
+  .version-list { left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); top: calc(100% + 4px); width: auto; }
+}
 .swap { display: inline-flex; align-items: baseline; gap: .4em; cursor: pointer; user-select: none; }
 .swap-word, .swap-arrow { display: inline-block; will-change: transform; }
 .swap-arrow { color: var(--accent); font-weight: 700; }

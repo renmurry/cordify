@@ -13,7 +13,7 @@
  *   repaired   rows the page rebuilt with Repair, so the exports include them
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=2", "repair-engine.js?v=7", "batch-core.js?v=4", "geo-io.js?v=1");
+importScripts("core.js?v=2", "repair-engine.js?v=7", "batch-core.js?v=4", "geo-io.js?v=2");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads
@@ -256,7 +256,11 @@ async function exportGeo(m) {
   if (!big) return postMessage({ type: "exported", job: m.job, blob: null });
   needProj(m.f.grid ? m.gridSpec : "off");
   const G = self.CordifyGeoIO, d = big.delim, grid = m.f.grid ? B.gridCells(m.gridSpec) : null;
-  const added = B.outCols({ empty: true }, m.f, grid).filter(c => c[0] !== "Convert_Status").map(c => c[0]);
+  // m.keep: the column names to write (all when absent); m.colour: colour KML pins by result.
+  const added = B.outCols({ empty: true }, m.f, grid).map(c => c[0]);
+  const keepName = n => !m.keep || m.keep.includes(n);
+  const addIdx = added.map((n, j) => j).filter(j => keepName(added[j]));
+  let keepIdx = [];
   const isPkg = m.format === "gpkg";
   let pkg = null, tb = null, w = null;
   if (isPkg) {
@@ -276,8 +280,9 @@ async function exportGeo(m) {
     if (!text.trim()) return;
     if (!head) {
       head = B.parseCsvRecord(text, d).map((c, j) => c.replace(/\s+/g, " ").trim() || `Column ${j + 1}`);
-      nameCol = head.findIndex(h => G.NAME_KEY.test(h));
-      if (isPkg) tb = pkg.table(m.title, head.map(h => ({ name: h, type: "TEXT" })).concat(added.map(n => ({ name: n, type: G.NUMERIC.test(n) ? "DOUBLE" : "TEXT" }))));
+      nameCol = G.labelColumn(head);
+      keepIdx = head.map((h, j) => j).filter(j => keepName(head[j]));
+      if (isPkg) tb = pkg.table(m.title, keepIdx.map(j => ({ name: head[j], type: "TEXT" })).concat(addIdx.map(j => ({ name: added[j], type: G.NUMERIC.test(added[j]) ? "DOUBLE" : "TEXT" }))));
       return;
     }
     if (i >= big.starts.length || big.starts[i] !== start) return;
@@ -286,13 +291,13 @@ async function exportGeo(m) {
     if (big.status[k] !== B.OK && !fixed) return;
     const fields = B.parseCsvRecord(text, d);
     const res = fixed ? { ...fixed } : { lat: big.lat[k], lon: big.lon[k], check: big.checks.get(k) };
-    const cols = B.outCols(res, m.f, grid).filter(c => c[0] !== "Convert_Status");
+    const cols = B.outCols(res, m.f, grid);
     if (isPkg) {
-      tb.point(res.lat, res.lon, head.map((h, j) => fields[j]).concat(cols.map(c => c[1])));
+      tb.point(res.lat, res.lon, keepIdx.map(j => fields[j]).concat(addIdx.map(j => cols[j][1])));
       return;
     }
     const name = nameCol >= 0 && (fields[nameCol] || "").trim() ? fields[nameCol] : `Row ${big.recNo[k]}`;
-    const s = w.point(name, res.lat, res.lon, head.map((h, j) => [ h, fields[j] ]).concat(cols));
+    const s = w.point(name, res.lat, res.lon, keepIdx.map(j => [ head[j], fields[j] ]).concat(addIdx.map(j => [ added[j], cols[j][1] ])), m.colour ? B.kindOf(res) : undefined);
     parts.push(s);
     size += s.length;
     if (size > 4e6) flush();

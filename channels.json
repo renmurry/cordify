@@ -1,31 +1,22 @@
 {
- "built": "2026-11-13T03:31:05.137Z",
+ "built": "2026-11-14T00:18:34.361Z",
  "channels": [
   {
    "id": "latest",
    "label": "Latest",
    "path": "./",
-   "ref": "v3.4.0",
-   "version": "v3.4.0",
-   "commit": "96a9ba6",
-   "date": "2026-11-13"
+   "ref": "v3.5.0",
+   "version": "v3.5.0",
+   "commit": "7ca1a5d",
+   "date": "2026-11-14"
   },
   {
    "id": "previous",
    "label": "Previous",
    "path": "previous/",
-   "ref": "v3.3.0",
-   "version": "v3.3.0",
-   "commit": "9f6f669",
-   "date": "2026-11-13"
-  },
-  {
-   "id": "preview",
-   "label": "Preview",
-   "path": "preview/",
-   "ref": "4a49c1b549fd4b6c69941434d81525254633dd49",
-   "version": "4a49c1b",
-   "commit": "4a49c1b",
+   "ref": "v3.4.0",
+   "version": "v3.4.0",
+   "commit": "96a9ba6",
    "date": "2026-11-13"
   }
  ]
