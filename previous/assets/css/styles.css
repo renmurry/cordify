@@ -641,3 +641,10 @@ html[data-look="neon"] textarea.result { box-shadow: inset 3px 0 12px -4px var(-
 mark.pin { border-radius: 3px; padding: 0 1px; cursor: help; }
 mark.pin-error { background: #ffd400; color: #000; font-weight: 700; box-shadow: 0 0 0 1px #000; }
 mark.pin-note { background: transparent; color: inherit; text-decoration: underline dotted currentColor; text-underline-offset: 3px; }
+
+/* Typing habits option (Batch and Repair) */
+.habit-opt { display: inline-flex; align-items: center; gap: 6px; font-size: .875rem; cursor: pointer; }
+.habits-found { margin: 6px 0 10px; font-size: .8125rem; }
+.habits-found summary { cursor: pointer; font-weight: 600; }
+.habits-found p { margin: 6px 0 2px; }
+.habits-found ul { margin: 0 0 4px; padding-left: 20px; }

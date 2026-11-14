@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=11");
+      worker = new Worker("./assets/js/batch-worker.js?v=12");
     } catch (e) {
       return null;
     }
@@ -368,14 +368,28 @@
       status(err.message === "cancelled" ? "Cancelled. Nothing was converted." : "Something went wrong while converting. Try again; if it keeps happening, try a smaller file.", err.message === "cancelled" ? "" : "bad");
       return;
     }
+    // Optional: rows with two possible readings, read the way the rest of the sheet was typed.
+    let habits = null;
+    if (out.failed && $("batch-habits").checked && window.CordifyHabits) {
+      try {
+        progress(1, "Reading the typing habits…");
+        habits = await applyHabits(out);
+      } catch (err) {
+        habits = null;
+      }
+    }
+    showHabits(habits);
     setBusy(false);
     state.results = out;
     const total = out.ok + out.failed;
+    const settled = habits ? habits.n : 0;
     const msg = `Converted ${count(out.ok)} of ${count(total)} row${total === 1 ? "" : "s"}` +
       (out.failed ? ` — ${count(out.failed)} couldn't be read${out.mistyped ? ` (${count(out.mistyped)} look mistyped)` : ""}` : "") +
       (out.empty ? `, ${count(out.empty)} empty` : "") + "." +
+      (settled ? ` Typing habits settled ${count(settled)} of them that had two possible readings (orange, worth checking).` : "") +
       (out.check ? ` ${count(out.check)} converted row${out.check === 1 ? " is" : "s are"} worth checking (far from the rest, a duplicate, or typed roughly).` : "") +
       (out.coarse.length ? ` ${coarseText(out.coarse)}` : "");
+    out.repaired = settled ? { fixed: 0, check: settled, left: out.failed - settled, habit: settled } : undefined;
     status(msg, out.failed || out.check ? (out.ok ? "warn" : "bad") : "good", out.failed > 0 ? "both" : null);
     const any = out.ok + out.failed > 0;
     $("batch-download-xlsx").disabled = !any || !!state.big;
@@ -384,9 +398,87 @@
     gisButtons(!out.ok);
     $("batch-map").disabled = !out.ok;
     $("batch-view").querySelector('[value="check"]').textContent = `Converted, worth checking (${count(out.check)})`;
-    $("batch-view").querySelector('[value="failed"]').textContent = `Not converted (${count(out.failed)})`;
-    $("batch-view").querySelector('[value="repaired"]').hidden = true;
+    $("batch-view").querySelector('[value="failed"]').textContent = `Not converted (${count(out.failed - settled)})`;
+    $("batch-view").querySelector('[value="repaired"]').hidden = !settled;
+    $("batch-view").querySelector('[value="repaired"]').textContent = `Repaired (${count(settled)})`;
+    if (settled) gisButtons(false);
     renderPreview();
+  }
+
+  /* ---------- typing habits (optional) ---------- */
+
+  const HABITS_KEY = "cordify_habits_v1";
+  const HABIT_SAMPLE = 5000;   // rows of a large file read back to learn from
+
+  // Rows that could not be read but have two possible readings: the reading that matches
+  // the other value in the cell, or a habit of the sheet. Marked as best guesses to check.
+  async function applyHabits(out) {
+    const H = window.CordifyHabits, R = window.CordifyRepair, B = BC();
+    const found = [];
+    let n = 0;
+    for (const name of out.names) {
+      const set = out.sets[name], s = state.sheets[name];
+      const ok = [], failed = [];
+      for (let i = 0; i < set.n; i++) {
+        if (set.status[i] === B.OK) ok.push(i);
+        else if (set.status[i] >= B.FAILED) failed.push(i);
+      }
+      if (!failed.length) continue;
+      const step = Math.max(1, Math.ceil(ok.length / HABIT_SAMPLE));
+      const learnIds = set.big ? ok.filter((_, k) => k % step === 0) : ok;
+      let cellsOf;
+      if (set.big) {
+        const m = await ask({ type: "window", ids: learnIds.concat(failed).sort((a, b) => a - b) });
+        const cells = new Map(m.rows.map(r => [ r.i, r.cells ]));
+        cellsOf = i => cells.get(i) || [];
+      } else {
+        cellsOf = i => {
+          const r = s.aoa[set.rowIndex[i]];
+          return s.mode === "one" ? [ r[s.one] ] : [ r[s.lat], r[s.lon] ];
+        };
+      }
+      const rowOf = i => {
+        const c = cellsOf(i);
+        return s.mode === "one" ? { text: String(c[0] ?? "") } : { lat: String(c[0] ?? ""), lon: String(c[1] ?? "") };
+      };
+      const habits = H.learn(learnIds.concat(failed).map(rowOf));
+      found.push({ name, lines: H.summary(habits) });
+      const far = farCheck(set, learnIds, R);
+      for (const i of failed) {
+        const d = H.decide(rowOf(i), habits);
+        if (!d) continue;
+        set.repaired = set.repaired || new Map();
+        set.repaired.set(i, { lat: d.lat, lon: d.lon, repaired: "check", habit: true, check: "typing habit: " + d.why + far(d.lat, d.lon) });
+        n++;
+      }
+      // A large CSV is written by the worker, which needs these rows too.
+      if (set.big && set.repaired) await ask({ type: "repaired", entries: [ ...set.repaired ], notes: [ ...(set.repairNotes || []) ] });
+    }
+    return { n, found };
+  }
+
+  // Far from the sheet's converted points: often a wrong degree digit, which no habit fixes.
+  function farCheck(set, ids, R) {
+    if (ids.length < 5) return () => "";
+    const med = a => { const v = Float64Array.from(a).sort(); return v[v.length >> 1]; };
+    const lat0 = med(ids.map(i => set.lat[i])), lon0 = med(ids.map(i => set.lon[i]));
+    const d = Float64Array.from(ids.map(i => R.km(set.lat[i], set.lon[i], lat0, lon0))).sort();
+    const limit = Math.max(25, 3 * d[Math.floor(d.length * 0.9)]);
+    return (lat, lon) => {
+      const k = R.km(lat, lon, lat0, lon0);
+      return k > limit ? `; but ${Math.round(k)} km from the sheet's other points — check the degrees` : "";
+    };
+  }
+
+  function showHabits(h) {
+    const box = $("batch-habits-found");
+    if (!h || !h.found.length) {
+      box.hidden = true;
+      return;
+    }
+    $("batch-habits-list").innerHTML = h.found.map(f => `<p><strong>${esc(f.name)}</strong></p><ul>` +
+      (f.lines.length ? f.lines.map(l => `<li>${esc(l)}</li>`).join("") : "<li>No habit is shared by enough rows to learn from.</li>") + "</ul>").join("");
+    box.hidden = false;
   }
 
   /* ---------- preview: only the rows on screen are ever drawn ---------- */
@@ -755,7 +847,8 @@
       for (const name of out.names) {
         const set = out.sets[name], s = state.sheets[name];
         const failed = [];
-        for (let i = 0; i < set.n; i++) if (set.status[i] >= B.FAILED) failed.push(i);
+        // Rows a typing habit already settled are left as they are.
+        for (let i = 0; i < set.n; i++) if (set.status[i] >= B.FAILED && !(set.repaired && set.repaired.has(i) && set.repaired.get(i).habit)) failed.push(i);
         let cellsOf;
         if (set.big) {
           const m = failed.length ? await ask({ type: "window", ids: failed }) : { rows: [] };
@@ -828,13 +921,14 @@
         const set = out.sets[name];
         if (set.big && set.repaired) await ask({ type: "repaired", entries: [ ...set.repaired ], notes: [ ...set.repairNotes ] });
       }
-      out.repaired = tally;
+      const byHabit = out.repaired && out.repaired.habit || 0;   // settled earlier by typing habits
+      out.repaired = { ...tally, check: tally.check + byHabit, habit: byHabit };
       setBusy(false);
       gisButtons(false);
       $("batch-map").disabled = false;
       const n = tally.fixed + tally.check;
-      $("batch-view").querySelector('[value="repaired"]').hidden = !n;
-      $("batch-view").querySelector('[value="repaired"]').textContent = `Repaired (${count(n)})`;
+      $("batch-view").querySelector('[value="repaired"]').hidden = !(n + byHabit);
+      $("batch-view").querySelector('[value="repaired"]').textContent = `Repaired (${count(n + byHabit)})`;
       $("batch-view").querySelector('[value="failed"]').textContent = `Not converted (${count(tally.left)})`;
       status(`Repaired ${count(n)} of the ${count(back.length)} rows that couldn't be read, using ${how}${places ? " and your saved village locations" : ""}: ` +
         `${count(tally.fixed)} with one clear reading (yellow), ${count(tally.check)} best guesses where several readings fit (orange).` +
@@ -858,6 +952,7 @@
 
   function clearResults() {
     state.results = null;
+    $("batch-habits-found").hidden = true;
     view = new Int32Array(0);
     drawToken++;
     $("batch-preview-wrap").hidden = true;
@@ -886,6 +981,15 @@
     });
     $("batch-cols").addEventListener("change", onColsChange);
     $("batch-run").addEventListener("click", run);
+    // The typing-habits choice is remembered on this device.
+    try {
+      $("batch-habits").checked = localStorage.getItem(HABITS_KEY) === "1";
+    } catch (e) {}
+    $("batch-habits").addEventListener("change", e => {
+      try {
+        localStorage.setItem(HABITS_KEY, e.target.checked ? "1" : "0");
+      } catch (err) {}
+    });
     $("batch-cancel").addEventListener("click", () => stopWorker(new Error("cancelled")));
     $("batch-download-xlsx").addEventListener("click", downloadXlsx);
     $("batch-download-csv").addEventListener("click", downloadCsv);

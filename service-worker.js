@@ -6,7 +6,7 @@
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
 // This copy's folder on the site, e.g. /cordify/
 const BASE = new URL('./', self.location).pathname;
-const CACHE_NAME = 'cordify-cache-v27';
+const CACHE_NAME = 'cordify-cache-v28';
 const PRECACHE = [
   './',
   './index.html',
@@ -28,6 +28,7 @@ const PRECACHE = [
   './assets/js/scan.js',
   './assets/js/batch.js',
   './assets/js/pinpoint.js',
+  './assets/js/systems.js',
   './assets/js/batch-core.js',
   './assets/js/habits.js',
   './assets/js/batch-worker.js',
