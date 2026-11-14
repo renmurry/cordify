@@ -58,7 +58,7 @@ expect("column names are made safe and unique", same(G.columnNames([ "ID", "id",
 w = G.textWriter("kml", "t");
 text = w.head + w.point("A", 26.5, 95.25, [], "bad") + w.point("B", 26.6, 95.3, []) + w.tail;
 expect("KML has a style per colour and a pin can use one", /<Style id="bad">/.test(text) && /<Style id="ok">/.test(text) && /<name>A<\/name><description>.*?<\/description><styleUrl>#bad<\/styleUrl>/.test(text) && /<name>B<\/name><description>.*?<\/description><styleUrl>#pin<\/styleUrl><Point>/.test(text), text);
-expect("KML pop-ups show only the table", (text.match(/<BalloonStyle><text>\$\[description\]<\/text><\/BalloonStyle>/g) || []).length === 6);
+expect("KML pop-ups show only the table, styled once per style", (text.match(/<BalloonStyle><text><!\[CDATA\[<style>[^<]*<\/style>\$\[description\]\]\]><\/text><\/BalloonStyle>/g) || []).length === 6 && !/<tr><th[^>]*style=/.test(text), text.slice(0, 900));
 
 /* ---------- the pin's pop-up table ---------- */
 
@@ -84,6 +84,16 @@ w = G.textWriter("kml", "t", { colour: false });
 text = w.head + w.point("C", 26.5, 95.25, [ [ "ID", "7" ] ], "ok") + w.tail;
 expect("pin table: plain pins when colour is off; location from the point when no columns hold it", /<styleUrl>#pin<\/styleUrl>/.test(text) && same(rowsOf(pin(text, "C")), [ [ "ID", "7" ], [ "Location", "26.5, 95.25" ] ]), text);
 expect("pin table: marked so reading the file back can skip it", pin(text, "C").startsWith('<table class="cordify-pin"'));
+w = G.textWriter("kml", "t", { table: false });
+text = w.head + w.point("D", 26.5, 95.25, [ [ "ID", "7" ] ], "ok") + w.tail;
+expect("pin table: can be left out, and the viewer's own pop-up is kept", !text.includes("<description>") && !text.includes("BalloonStyle") && text.includes('<Data name="ID">'), text);
+
+/* ---------- naming pins ---------- */
+
+expect("pin names: a name column first", G.labelColumn([ "Sl No", "Name of the Farmer", "Village" ]) === 1);
+expect("pin names: then a place", G.labelColumn([ "Sl No", "Village", "Area" ]) === 1);
+expect("pin names: then an ID, plot or owner, not a serial number", G.labelColumn([ "Sl No", "Plot ID", "Owner" ]) === 1 && G.labelColumn([ "Sl No", "Area", "Owner" ]) === 2 && G.labelColumn([ "Sl No", "Khasra No", "Lat" ]) === 1);
+expect("pin names: none fits", G.labelColumn([ "Sl No", "Lat", "Lon", "Remarks" ]) === -1);
 
 /* ---------- Shapefile (read back by the published format, byte by byte) ---------- */
 

@@ -4,12 +4,13 @@
  * and get one zip (or a folder you pick) with a folder per sheet and one per format.
  *
  *   window.CordifyGisExport.open({ fileName, datasets, legend, big })
- *     datasets  [ { name, head: [column names], rows: [ { lat, lon, values, kind, reason, rowNo } ], extras: [ { path, data } ] } ]
+ *     datasets  [ { name, head: [column names], typed: [the columns the coordinate was typed in], rows: [ { lat, lon, values, kind, reason, rowNo } ], extras: [ { path, data } ] } ]
  *               rows in their original order; a row with lat == null has no coordinate (reason says why);
  *               kind ("ok", "fixed", "check", "bad", "confirmed") colours Google Earth pins and Excel rows
  *     legend    [ [ kind, colour name, meaning ] ] for the Excel legend sheet
  *     big       for a file too big to hold in memory (Batch's large CSV):
- *               { name, head, formats: [ids], points, run(format, keepNames, colour) -> Promise<Blob> }
+ *               { name, head, formats: [ids], points, run(format, keepNames, colour, label, table) -> Promise<Blob> }
+ *               label: the column to name pins by ("" for Cordify's pick); table: KML pop-up tables
  */
 (function () {
   "use strict";
@@ -93,7 +94,7 @@
       while (used.has(dir.toLowerCase())) dir = `${safe(ds.name)} ${k++}`;
       used.add(dir.toLowerCase());
       const file = dir;
-      const li = G.labelColumn(ds.head);
+      const li = choice.label && ds.head.includes(choice.label) ? ds.head.indexOf(choice.label) : G.labelColumn(ds.head);
       const label = (r, n) => (li >= 0 && String(plain(r.values[li])).trim()) || `Row ${r.rowNo ?? n + 1}`;
       const props = r => {
         const v = pick(r);
@@ -103,7 +104,7 @@
       for (const fmt of [ "geojson", "kml", "gpx" ]) {
         if (!want(fmt) && !(fmt === "kml" && want("kmz"))) continue;
         // The pin's result is always passed: it decides what the pop-up shows, even on plain pins.
-        const w = G.textWriter(fmt, ds.name, { colour: choice.colour, typed: ds.typed });
+        const w = G.textWriter(fmt, ds.name, { colour: choice.colour, typed: ds.typed, table: choice.table });
         const text = w.head + pts.map((r, n) => w.point(label(r, n), +r.lat, +r.lon, props(r), r.kind || undefined)).join("") + w.tail;
         if (want(fmt)) files.push({ path: `${dir}/${fmt}/${file}.${w.ext}`, data: text });
         if (fmt === "kml" && want("kmz")) {
@@ -166,7 +167,7 @@
       if (!choice.formats.has(f.id) || !b.formats.includes(f.id)) continue;
       say(`Writing ${f.label}…`);
       try {
-        const blob = await b.run(f.id === "kmz" ? "kml" : f.id, keepNames, choice.colour);
+        const blob = await b.run(f.id === "kmz" ? "kml" : f.id, keepNames, choice.colour, choice.label, choice.table);
         if (f.id === "kmz") {
           const z = new JSZip();
           z.file("doc.kml", blob);
@@ -248,6 +249,8 @@
       <fieldset><legend>Columns to include <span class="gis-col-actions"><button type="button" class="btn-quiet" id="gis-all">All</button><button type="button" class="btn-quiet" id="gis-none">None</button></span></legend>
         <div class="gis-cols" id="gis-cols"></div>
         <p class="hint">The location is always included: as the point itself, and as columns in CSV and Excel.</p></fieldset>
+      <label class="gis-label">Name pins by <select id="gis-label"></select></label>
+      <label class="inline"><input type="checkbox" id="gis-table"> Show the columns as a table when a KML / KMZ pin is clicked (about twice the file size)</label>
       <label class="inline"><input type="checkbox" id="gis-colour"> Colour pins and Excel rows by result</label>
       <label class="inline" id="gis-missing-wrap"><input type="checkbox" id="gis-missing"> Add a list of rows without a coordinate, so none go missing</label>
       <p class="hint batch-status" id="gis-status" role="status"></p>
@@ -288,7 +291,13 @@
     const names = [];
     (big ? [ { head: o.big.head } ] : o.datasets).forEach(ds => ds.head.forEach(h => { if (!names.includes(h)) names.push(h); }));
     $("gis-cols").innerHTML = names.map((h, i) => `<label class="inline"><input type="checkbox" id="gis-col-${i}" value="${esc(h)}" checked> ${esc(h)}</label>`).join("");
+    // The pin names (KML, KMZ, GPX): a column, or Cordify's pick ("Row 12" when none fits).
+    const G = window.CordifyGeoIO, heads = big ? [ o.big.head ] : o.datasets.map(ds => ds.head);
+    const auto = heads.map(h => h[G.labelColumn(h)]).find(Boolean);
+    $("gis-label").innerHTML = `<option value="">Automatic${auto ? ` (${esc(auto)})` : " (row numbers)"}</option>` +
+      names.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join("");
     $("gis-colour").checked = p.colour;
+    $("gis-table").checked = p.table !== false;
     $("gis-missing").checked = p.missing;
     $("gis-missing-wrap").hidden = big;
     $("gis-folder").hidden = typeof window.showDirectoryPicker !== "function";
@@ -310,9 +319,11 @@
       formats: new Set([ ...$("gis-formats").querySelectorAll("input:checked:not(:disabled)") ].map(i => i.value)),
       columns: new Set([ ...$("gis-cols").querySelectorAll("input:checked") ].map(i => i.value)),
       colour: $("gis-colour").checked,
-      missing: $("gis-missing").checked
+      missing: $("gis-missing").checked,
+      label: $("gis-label").value,
+      table: $("gis-table").checked
     };
-    savePrefs({ formats: [ ...choice.formats ], colour: choice.colour, missing: choice.missing });
+    savePrefs({ formats: [ ...choice.formats ], colour: choice.colour, missing: choice.missing, table: choice.table });
     const status = (text, kind) => {
       $("gis-status").textContent = text;
       $("gis-status").className = "hint batch-status" + (kind ? " " + kind : "");

@@ -603,9 +603,9 @@
         } catch (err) {
           text = new TextDecoder("windows-1252").decode(buf);
         }
-        wb = XLSX.read(text.replace(/^﻿/, ""), { type: "string" });
+        wb = XLSX.read(text.replace(/^﻿/, ""), { type: "string", cellNF: true });
       } else {
-        wb = XLSX.read(buf, { type: "array" });
+        wb = XLSX.read(buf, { type: "array", cellNF: true });
       }
       state.workbook = wb;
       state.fileName = file.name.replace(/\.[^.]+$/, "");
@@ -614,6 +614,7 @@
       state.systemNo = {};
       for (const name of wb.SheetNames) {
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true, blankrows: true });
+        if (window.CordifyBatchCore) window.CordifyBatchCore.datesAsText(wb.Sheets[name], aoa, XLSX, ((wb.Workbook || {}).WBProps || {}).date1904, /\.csv$/i.test(file.name));
         const h = aoa.findIndex(r => r.some(c => String(c).trim() !== ""));
         if (h < 0) {
           state.sheets[name] = { aoa, head: [], h: -1, use: false, sets: [], village: -1, rows: 0 };

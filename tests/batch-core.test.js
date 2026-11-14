@@ -122,5 +122,28 @@ expect("...not one digit short, which is usually a zero Excel dropped (25.810 ->
 const few = B.qualityChecks([ 26.9, 29.8 ], [ 95, 94.8 ], Uint8Array.from([ B.OK, B.OK ]), null, [ 2, 3 ]);
 expect("too few points to judge distance: no far flags", few.size === 0);
 
+/* ---------- dates (made-up workbook) ---------- */
+
+const X = require("../assets/vendor/xlsx.full.min.js");
+const dws = X.utils.aoa_to_sheet([ [ "Survey date", "Time", "Lat", "Lon" ], [ 46096, 0.6041666667, 26.1, 94.5 ], [ 46096.6041666667, "", 26.2, 94.6 ], [ "15/03/2026", "", 26.3, 94.7 ] ]);
+dws.A2.z = "dd/mm/yyyy";
+dws.B2.z = "h:mm";
+dws.A3.z = "m/d/yy h:mm";
+dws.C2.z = "0.00";
+const dwb = X.utils.book_new();
+X.utils.book_append_sheet(dwb, dws, "S");
+const back = X.read(X.write(dwb, { type: "buffer", bookType: "xlsx" }), { type: "buffer", cellNF: true });
+const rowsOfSheet = ws => X.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true, blankrows: true });
+let daoa = rowsOfSheet(back.Sheets.S);
+expect("dates: three date cells written as text", B.datesAsText(back.Sheets.S, daoa, X, false) === 3);
+expect("dates: day, time, both; numbers and text untouched", JSON.stringify(daoa.slice(1)) === JSON.stringify([ [ "2026-03-15", "14:30", 26.1, 94.5 ], [ "2026-03-15 14:30", "", 26.2, 94.6 ], [ "15/03/2026", "", 26.3, 94.7 ] ]), daoa);
+daoa = rowsOfSheet(back.Sheets.S);
+B.datesAsText(back.Sheets.S, daoa, X, true);
+expect("dates: the 1904 date system", daoa[1][0] === "2030-03-16", daoa[1]);
+const csv = X.read("Date,Lat,Lon\n3/15/2026,26.1,94.5\n", { type: "string", cellNF: true });
+const caoa = rowsOfSheet(csv.Sheets.Sheet1);
+B.datesAsText(csv.Sheets.Sheet1, caoa, X, false, true);
+expect("dates: a CSV keeps the date as it was typed", caoa[1][0] === "3/15/2026", caoa);
+
 console.log(`\nbatch-core: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
