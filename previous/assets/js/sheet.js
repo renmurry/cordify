@@ -90,9 +90,23 @@
       on = localStorage.getItem(ON_KEY) === "1";
     } catch (e) {}
   }
+  // One write at a time: changes made while a write is under way are saved by one more write
+  // when it finishes, instead of a write per change.
+  let writing = false, again = false;
   function persist() {
     touched = true;
-    store.set(keyOf(book.active), state).catch(() => note(FULL, "bad"));
+    if (writing) {
+      again = true;
+      return;
+    }
+    writing = true;
+    store.set(keyOf(book.active), state).catch(() => note(FULL, "bad")).then(() => {
+      writing = false;
+      if (again) {
+        again = false;
+        persist();
+      }
+    });
   }
   const persistBook = () => store.set(BOOK_KEY, book).catch(() => {});
 

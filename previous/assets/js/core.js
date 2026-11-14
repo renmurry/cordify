@@ -246,7 +246,7 @@
     return null;
   }
 
-  const cache = new Map();
+  const cache = new Map(), CACHE_MAX = 40;   // a custom definition arrives one keystroke at a time
   // spec: "off" | "utm" | "epsg:32646" | "def:+proj=… or WKT text"
   function resolve(spec) {
     spec = String(spec || "off").trim();
@@ -286,6 +286,7 @@
         }
       }
     }
+    if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
     cache.set(spec, sys);
     return sys;
   }

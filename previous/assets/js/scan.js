@@ -283,6 +283,7 @@
 
   function render() {
     const any = state.items.length > 0;
+    if ($("scan-report")) $("scan-report").hidden = true;   // out of date once the list changes
     $("scan-review").hidden = !any;
     $("scan-add").hidden = !any;
     if (!any) return;
@@ -332,6 +333,15 @@
       tr.querySelector('[data-k="include"]').disabled = x.lat === null;
     }
     renderAdd();
+  }
+
+  // A few points on what was found, the way "Scan first" reports on a file in Batch.
+  function showReport() {
+    const Rep = window.CordifyReport;
+    if (!Rep || !state.items.length) return;
+    const rows = state.items.map(x => [ x.text ]);
+    const r = Rep.scan([ { name: "Found in the documents", head: [ "Found" ], mode: "one", one: 0, lat: 0, lon: 0, found: true, rows } ], {});
+    Rep.render($("scan-report"), r, {});
   }
 
   /* ---------- add to a sheet ---------- */
@@ -399,6 +409,7 @@
     $("scan-body").addEventListener("input", onEdit);
     $("scan-body").addEventListener("change", onEdit);
     $("scan-add-btn").addEventListener("click", addToSheet);
+    if ($("scan-report-btn")) $("scan-report-btn").addEventListener("click", showReport);
     $("scan-map").addEventListener("click", showOnMap);
     $("scan-clear").addEventListener("click", () => {
       state.items = [];
