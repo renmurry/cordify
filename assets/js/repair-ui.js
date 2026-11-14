@@ -1480,44 +1480,32 @@
     return saveColoured(out, plan, `${state.fileName || "cordify"}_repaired.xlsx`);
   }
 
-  function pointFeatures() {
+  // Every sheet as rows for the export: its own columns, then Repair's; one point per coordinate column used.
+  function openGisExport() {
+    if (!window.CordifyGisExport || !state.results.length) return;
     const f = formats();
-    const feats = [];
+    const bySheet = new Map();
     state.rows.forEach((r, i) => {
-      const v = exportValues(i, f);
-      if (v.lat == null) return;
-      const props = {};
-      if (state.source !== "paste") {
-        const s = state.sheets[r.sheet];
-        s.head.forEach((h, j) => {
-          const val = s.aoa[r.rowIndex][j];
-          if (h && val !== "" && val != null) props[h] = noCR(val);
-        });
-      }
-      Object.assign(props, { sheet: r.sheet, row: r.rowIndex + 1 }, r.multi ? { coordinate_column: r.setLabel } : {}, { original: noCR(r.raw) });
-      v.cols.forEach(([ k, val ]) => { props[k] = val; });
-      feats.push({ type: "Feature", geometry: { type: "Point", coordinates: [ +v.lon.toFixed(8), +v.lat.toFixed(8) ] }, properties: props });
+      if (!bySheet.has(r.sheet)) bySheet.set(r.sheet, []);
+      bySheet.get(r.sheet).push(i);
     });
-    return feats;
-  }
-
-  function exportGeoJson() {
-    download(`${state.fileName || "cordify"}_repaired.geojson`, new Blob([ JSON.stringify({ type: "FeatureCollection", features: pointFeatures() }, null, 1) ], { type: "application/geo+json" }));
-  }
-
-  function exportKml() {
-    const x = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const style = { "Placed by user": "checked", "Unchanged": "ok", "Checked by user": "checked", "Corrected - check": "fixed", "Needs check": "check", "Best guess - check": "check" };
-    const color = { ok: "ff327d2e", checked: "ffc06515", fixed: "ff0097c9", check: "ff007be0" };
-    const styles = Object.entries(color).map(([ id, c ]) => `<Style id="${id}"><IconStyle><color>${c}</color><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>`).join("");
-    const pms = pointFeatures().map(f => {
-      const p = f.properties;
-      const data = Object.entries(p).map(([ k, v ]) => `<Data name="${x(k)}"><value>${x(v)}</value></Data>`).join("");
-      const nm = p[Object.keys(p).find(k => VILLAGE.test(k))] || `${p.sheet} row ${p.row}`;
-      return `<Placemark><name>${x(nm)}</name><styleUrl>#${style[p.Repair_Status] || "check"}</styleUrl><ExtendedData>${data}</ExtendedData><Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point></Placemark>`;
-    }).join("\n");
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Cordify repaired points</name>${styles}\n${pms}\n</Document></kml>`;
-    download(`${state.fileName || "cordify"}_repaired.kml`, new Blob([ kml ], { type: "application/vnd.google-earth.kml+xml" }));
+    const datasets = [];
+    for (const [ name, idx ] of bySheet) {
+      const s = state.source === "paste" ? null : state.sheets[name];
+      const multi = idx.some(i => state.rows[i].multi);
+      const names = exportValues(idx[0], f).cols.map(c => c[0]);
+      const head = (s ? s.head : [ "Original" ]).concat(multi ? [ "Coordinate column" ] : [], names);
+      const rows = idx.map(i => {
+        const r = state.rows[i], v = exportValues(i, f), e = effective(i);
+        const own = s ? s.head.map((h, j) => noCR(s.aoa[r.rowIndex][j])) : [ noCR(r.raw) ];
+        return {
+          lat: v.lat, lon: v.lon, rowNo: r.rowIndex + 1, kind: KIND[e.status] || null, reason: v.lat == null ? noteFor(i) || (STATUS_TEXT[e.status] || e.status) : "",
+          values: own.concat(multi ? [ r.setLabel ] : [], v.cols.map(c => c[1]))
+        };
+      }).filter(x => x.lat != null || x.reason !== "Empty");
+      datasets.push({ name: state.source === "paste" ? "Pasted" : name, head, rows });
+    }
+    window.CordifyGisExport.open({ fileName: `${state.fileName || "cordify"}_repaired`, datasets, legend: LEGEND });
   }
 
   /* ---------------- wiring ---------------- */
@@ -1661,8 +1649,7 @@
       }
     });
     $("rp-export-xlsx").addEventListener("click", exportWorkbook);
-    $("rp-export-geojson").addEventListener("click", exportGeoJson);
-    $("rp-export-kml").addEventListener("click", exportKml);
+    $("rp-export-gis").addEventListener("click", openGisExport);
   }
 
   if (document.readyState === "loading") {

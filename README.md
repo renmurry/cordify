@@ -51,8 +51,12 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   village locations saved in the Repair tab if there are any, otherwise
   with an area estimated from the rows that converted. Repaired rows are
   marked yellow (one clear reading) or orange (best guess) to check.
-  For GIS software the converted points can also be saved as GeoPackage
-  (opens directly in QGIS, coordinate system included), GeoJSON, KML or GPX.
+  "Export for GIS…" saves the points in the formats you tick (GeoPackage,
+  Shapefile, GeoJSON, KML, KMZ, GPX, CSV, Excel) with the columns you choose,
+  as one zip (or a folder you pick) with a folder per sheet and per format.
+  Pins and Excel rows are coloured by result, and rows without a coordinate
+  are listed in their own file so none go missing. The same export is in
+  Repair and on the sheet.
 - **History** — every conversion is saved locally in your browser (in
   IndexedDB, so tens of thousands fit). You can
   review, export (JSON/CSV), or clear it.
