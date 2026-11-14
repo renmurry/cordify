@@ -636,3 +636,8 @@ html[data-look="neon"] textarea.result { box-shadow: inset 3px 0 12px -4px var(-
 @media (prefers-reduced-motion: reduce) {
   html[data-look="neon"] button { transition: none; }
 }
+
+/* The exact wrong character in a typed coordinate (Batch and Repair) */
+mark.pin { border-radius: 3px; padding: 0 1px; cursor: help; }
+mark.pin-error { background: #ffd400; color: #000; font-weight: 700; box-shadow: 0 0 0 1px #000; }
+mark.pin-note { background: transparent; color: inherit; text-decoration: underline dotted currentColor; text-underline-offset: 3px; }
