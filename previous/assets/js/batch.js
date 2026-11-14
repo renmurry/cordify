@@ -108,6 +108,7 @@
     busy = on;
     $("batch-progress-wrap").hidden = !on;
     $("batch-run").disabled = on;
+    if ($("batch-scan")) $("batch-scan").disabled = on;
     $("batch-file").disabled = on;
     if (on) progress(0, text);
   }
@@ -414,6 +415,72 @@
     $("batch-view").querySelector('[value="repaired"]').textContent = `Repaired (${count(settled)})`;
     if (settled) gisButtons(false);
     renderPreview();
+  }
+
+  /* ---------- scan first: a short report before converting ---------- */
+
+  const SCAN_ROWS = 20000;              // most rows of a sheet read for the report
+  const SCAN_BYTES = 4 * 1024 * 1024;   // of a large CSV, only this much is read for it
+
+  // Every row of each ticked sheet, or an even sample of a long one; a large CSV from its start.
+  async function scanSheets(names) {
+    const B = BC(), out = [];
+    for (const n of names) {
+      const s = state.sheets[n];
+      const base = { name: n, head: s.head, mode: s.mode, one: s.one, lat: s.lat, lon: s.lon, found: s.found, system: s.system || null };
+      if (s.big) {
+        const text = decodeText(await state.big.file.slice(0, SCAN_BYTES).arrayBuffer()).replace(/^\uFEFF/, "");
+        const records = B.splitCsvRecords(text);
+        if (state.big.file.size > SCAN_BYTES) records.pop();   // probably cut off mid-line
+        const lines = records.filter(l => l.trim()).slice(1).map(l => B.parseCsvRecord(l, state.big.delim));
+        out.push({ ...base, rows: lines, sample: state.big.file.size > SCAN_BYTES });
+        continue;
+      }
+      const rows = [];
+      for (let i = s.h + 1; i < s.aoa.length; i++) {
+        const r = s.aoa[i];
+        if (r && r.some(c => String(c).trim() !== "")) rows.push(r);
+      }
+      const step = Math.max(1, Math.ceil(rows.length / SCAN_ROWS));
+      out.push({ ...base, rows: step > 1 ? rows.filter((_, k) => k % step === 0) : rows, total: rows.length });
+    }
+    return out;
+  }
+
+  async function scanFirst() {
+    const Rep = window.CordifyReport;
+    if (busy || !Rep || (!state.workbook && !state.big)) return;
+    const names = selected();
+    if (!names.length) {
+      status("Tick at least one sheet.", "bad");
+      return;
+    }
+    setBusy(true, "Scanning…");
+    progress(0.5, "Reading the rows…");
+    try {
+      const sheets = await scanSheets(names);
+      const ref = await refArea();
+      const result = Rep.scan(sheets, { ref, datum: datumOf(), habitsOn: $("batch-habits").checked });
+      Rep.render($("batch-report"), result, { onAct: onReportAction });
+    } catch (err) {
+      status("Something went wrong while scanning. Try again; if it keeps happening, try a smaller file.", "bad");
+    }
+    setBusy(false);
+  }
+
+  function onReportAction(act) {
+    if (act.type === "system") {
+      const s = state.sheets[act.sheet];
+      if (s) {
+        s.system = act.system;
+        clearResults();
+      }
+      scanFirst();
+    } else if (act.type === "habits") {
+      $("batch-habits").checked = true;
+      $("batch-habits").dispatchEvent(new Event("change"));
+      scanFirst();
+    } else if (act.type === "repair") openRepair();
   }
 
   /* ---------- other coordinate systems ---------- */
@@ -1106,6 +1173,7 @@
     state.big = null;
     state.sheets = {};
     clearResults();
+    if ($("batch-report")) $("batch-report").hidden = true;
     [ "batch-sheet-wrap", "batch-mapping", "batch-out", "batch-actions", "batch-gis" ].forEach(id => { $(id).hidden = true; });
     status("");
   }
@@ -1116,7 +1184,9 @@
     $("batch-sheet").addEventListener("change", () => {
       renderCols();
       clearResults();
+      if ($("batch-report")) $("batch-report").hidden = true;
     });
+    if ($("batch-scan")) $("batch-scan").addEventListener("click", scanFirst);
     $("batch-cols").addEventListener("change", onColsChange);
     $("batch-run").addEventListener("click", run);
     // The typing-habits choice is remembered on this device.

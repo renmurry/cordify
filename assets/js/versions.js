@@ -25,11 +25,13 @@
 
   function render(channels) {
     const cur = channels.find(c => c.id === here) || channels[0];
-    const name = cur.id === "preview" ? "Preview" : cur.version;
-    box.innerHTML = `<summary aria-label="Version: ${esc(cur.label)}, ${esc(cur.version)}. Choose another version.">${esc(name)}` +
+    // A release may have a name ("v3.10.0 Fable"), given in its tag message.
+    const full = c => c.version + (c.name ? ` ${c.name}` : "");
+    const name = cur.id === "preview" ? "Preview" : full(cur);
+    box.innerHTML = `<summary aria-label="Version: ${esc(cur.label)}, ${esc(full(cur))}. Choose another version.">${esc(name)}` +
       (cur.id === "previous" ? ` <span class="version-tag">previous</span>` : "") + `</summary>` +
       `<div class="version-list">` + channels.map(c => `<a href="${esc(new URL(c.path, root).href)}"${c.id === cur.id ? ' aria-current="page"' : ""}>` +
-        `<b>${esc(c.label)}</b><span>${esc(c.version)}${c.date ? ` · ${esc(when(c.date))}` : ""}</span><small>${esc(HELP[c.id] || "")}</small></a>`).join("") +
+        `<b>${esc(c.label)}</b><span>${esc(full(c))}${c.date ? ` · ${esc(when(c.date))}` : ""}</span><small>${esc(HELP[c.id] || "")}</small></a>`).join("") +
       (channels.length > 1 ? `<p class="hint">Previous and Preview work online only. All versions share what this browser has saved.</p>` : "") + `</div>`;
     box.hidden = false;
   }
