@@ -53,27 +53,15 @@
       try {
         localStorage.setItem("cordify_advanced", box.checked ? "1" : "0");
       } catch (e) {}
-      if (!box.checked && $("repair-tab").style.display !== "none") {
-        $("tab-convert").click();
+      if (!box.checked && window.CordifyTabs.current() === "repair") {
+        window.CordifyTabs.show("convert");
       }
     });
-    tab.addEventListener("click", showRepairTab);
-    [ "tab-convert", "tab-map", "tab-history" ].forEach(id => $(id)?.addEventListener("click", () => {
-      $("repair-tab").style.display = "none";
-      tab.classList.remove("is-active");
-    }));
+    window.CordifyTabs.onShow("repair", onRepairShown);
   }
 
-  function showRepairTab() {
-    [ "convert-tab", "history-tab", "map-tab" ].forEach(id => {
-      const el = $(id);
-      if (el) {
-        el.style.display = "none";
-      }
-    });
-    document.querySelectorAll(".tabs .tab-btn").forEach(b => b.classList.remove("is-active"));
-    $("tab-repair").classList.add("is-active");
-    $("repair-tab").style.display = "";
+  // The map measures itself only while the tab is visible.
+  function onRepairShown() {
     if (state.pendingDraw) {
       state.pendingDraw = false;
       drawBoundary();
