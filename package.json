@@ -3,7 +3,7 @@
   "private": true,
   "description": "Development tooling only. The app itself has no build step and no runtime dependencies from npm.",
   "scripts": {
-    "test": "node tests/core.test.js && node tests/batch-core.test.js && node tests/geo-io.test.js && node tests/scan-core.test.js && node tests/xlsx-color.test.js && node tests/repair-engine.test.js && node tests/pinpoint.test.js && node tests/habits.test.js"
+    "test": "node tests/core.test.js && node tests/batch-core.test.js && node tests/geo-io.test.js && node tests/scan-core.test.js && node tests/xlsx-color.test.js && node tests/repair-engine.test.js && node tests/pinpoint.test.js && node tests/habits.test.js && node tests/systems.test.js"
   },
   "devDependencies": {
     "proj4": "2.8.1"

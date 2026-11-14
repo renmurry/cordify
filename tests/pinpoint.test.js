@@ -107,5 +107,12 @@ expect("two-column batch error names the cell", /^latitude cell, character 5: th
 res = B.readRow([ "94.2", "25.5" ], { mode: "two", lat: 0, lon: 1 });
 expect("swapped columns keep their message", /swapped/.test(res.error), res);
 
+// Grid metres are named as such, with no readings in degrees
+let g = P.explain("684557, 2856045");
+expect("grid metres in one cell", g.errors === 1 && /grid coordinates in metres/.test(g.summary) && g.problems[0].readings.length === 0, g.summary);
+g = P.explain("2856045", "lat");
+expect("grid metres in a column", g.errors === 1 && /grid coordinates/.test(g.summary), g.summary);
+expect("ordinary degrees are not grid metres", P.explain("26.5, 94.2").errors === 0);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

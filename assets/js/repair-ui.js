@@ -30,7 +30,8 @@
     filter: "all", page: 0, map: null, boundaryLayer: null, pointLayer: null,
     estimated: false, userSrc: [], userFeatures: [], boundaryName: "",
     flags: new Map(), placing: null, dirty: false, pendingResume: null,
-    places: null, placesList: [], placesName: "", placesLayer: null, drawing: null
+    places: null, placesList: [], placesName: "", placesLayer: null, drawing: null,
+    systems: {}, systemNo: {}, systemList: []
   };
 
   /* ---------------- Advanced mode + tab ---------------- */
@@ -621,6 +622,8 @@
       state.workbook = wb;
       state.fileName = file.name.replace(/\.[^.]+$/, "");
       state.sheets = {};
+      state.systems = {};
+      state.systemNo = {};
       for (const name of wb.SheetNames) {
         const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true, blankrows: true });
         const h = aoa.findIndex(r => r.some(c => String(c).trim() !== ""));
@@ -711,7 +714,7 @@
     const rows = [];
     if (state.source === "paste") {
       $("rp-paste").value.split(/\n/).forEach((line, i) => {
-        if (line.trim()) rows.push({ id: rows.length, text: line, group: "Pasted", village: null, sheet: "Pasted", rowIndex: i, raw: line });
+        if (line.trim()) rows.push(applySystem({ id: rows.length, text: line, group: "Pasted", village: null, sheet: "Pasted", rowIndex: i, raw: line }));
       });
       return rows;
     }
@@ -742,11 +745,115 @@
             row.text = r[set.one] === "" ? null : String(r[set.one]);
             row.raw = row.text ?? "";
           }
-          rows.push(row);
+          rows.push(applySystem(row));
         });
       }
     }
     return rows;
+  }
+
+  /* ---------------- other coordinate systems ---------------- */
+
+  // A sheet read in another system (UTM, MGRS, radians, swapped…): its rows are turned into
+  // "latitude, longitude" degrees for Repair; the original text stays in `raw` and is shown.
+  function applySystem(row) {
+    const S = window.CordifySystems, sys = state.systems[row.sheet];
+    if (!sys || !S) return row;
+    const one = row.text !== undefined;
+    const p = S.read(one ? [ row.text ?? "" ] : [ row.latText ?? "", row.lonText ?? "" ], sys);
+    if (p.error) return row;
+    const la = String(+p.lat.toFixed(7)), lo = String(+p.lon.toFixed(7));
+    if (one) row.text = `${la}, ${lo}`;
+    else {
+      row.latText = la;
+      row.lonText = lo;
+    }
+    row.system = S.labelOf(sys);
+    return row;
+  }
+
+  function findSystems() {
+    const S = window.CordifySystems, B = window.CordifyBatchCore;
+    if (!S) return [];
+    const bySheet = new Map();
+    for (const r of state.rows) {
+      if (!bySheet.has(r.sheet)) bySheet.set(r.sheet, []);
+      bySheet.get(r.sheet).push(r);
+    }
+    const ref = state.userFeatures.length ? { inside: (lat, lon) => !!R.featureAt(state.userFeatures, lon, lat) } : null;
+    const out = [];
+    for (const [ sheet, rows ] of bySheet) {
+      if (state.systems[sheet]) {
+        out.push({ sheet, using: state.systems[sheet] });
+        continue;
+      }
+      if (state.systemNo[sheet]) continue;
+      const cellsOf = r => r.text !== undefined ? [ r.text ?? "" ] : [ r.latText ?? "", r.lonText ?? "" ];
+      const step = Math.max(1, Math.ceil(rows.length / 400));
+      const sample = rows.filter((r, k) => k % step === 0 && cellsOf(r).some(c => String(c).trim() !== ""));
+      if (!sample.length) continue;
+      let swapped = 0;
+      if (B) {
+        for (const r of sample) {
+          const c = cellsOf(r), res = B.readRow(c, c.length === 1 ? { mode: "one", one: 0 } : { mode: "two", lat: 0, lon: 1 });
+          if (res.error && /swap/i.test(res.error)) swapped++;
+        }
+      }
+      const d = S.detect(sample.map(r => ({ cells: cellsOf(r) })), ref, { swapped: swapped / sample.length, head: [ sample[0].setLabel || "" ] });
+      if (d) out.push({ sheet, d });
+    }
+    return out;
+  }
+
+  function renderSystems() {
+    const box = $("rp-systems"), S = window.CordifySystems;
+    if (!box) return;
+    let list = [];
+    try {
+      list = findSystems();
+    } catch (e) {
+      list = [];
+    }
+    state.systemList = list;
+    if (!list.length || !S) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    const keyOf = sys => sys.kind === "utm" ? `utm:${sys.zone}:${sys.south ? "S" : "N"}` : sys.kind;
+    const all = [ { kind: "cell" }, { kind: "mercator" } ];
+    for (const south of [ false, true ]) for (let z = 1; z <= 60; z++) all.push({ kind: "utm", zone: z, south });
+    all.push({ kind: "radians" }, { kind: "swap" });
+    const opts = `<option value="">Choose…</option>` + all.map(sys => `<option value="${keyOf(sys)}">${esc(S.labelOf(sys))}</option>`).join("");
+    const many = new Set(state.rows.map(r => r.sheet)).size > 1;
+    box.innerHTML = list.map(x => {
+      const lab = many ? `“${esc(x.sheet)}”: ` : "";
+      if (x.using) return `<div class="sys-row" data-sheet="${esc(x.sheet)}"><span>${lab}read as <strong>${esc(S.labelOf(x.using))}</strong>; Repair works on these as latitude/longitude.</span><button type="button" data-act="undo">Undo</button></div>`;
+      const d = x.d;
+      const q = d.system ? `${lab}these look like <strong>${esc(d.label)}</strong> (${esc(d.why)}). Read them this way?`
+        : `${lab}these look like <strong>${esc(d.label)}</strong>: ${esc(d.why)}.`;
+      return `<div class="sys-row" data-sheet="${esc(x.sheet)}"><span>${q}</span>` +
+        (d.system ? `<button type="button" class="btn-primary" data-act="yes">Yes</button>` : "") +
+        `<label>${d.system ? "Pick another" : "System"} <select data-act="pick">${opts}</select></label>` +
+        `<button type="button" class="btn-quiet" data-act="no">No, leave as is</button></div>`;
+    }).join("");
+    box.hidden = false;
+  }
+
+  function onSystemAction(e) {
+    const row = e.target.closest(".sys-row"), act = e.target.dataset.act;
+    if (!row || !act || (act === "pick") !== (e.type === "change")) return;
+    const sheet = row.dataset.sheet, x = state.systemList.find(y => y.sheet === sheet);
+    if (act === "yes" && x && x.d && x.d.system) state.systems[sheet] = x.d.system;
+    else if (act === "pick") {
+      const m = /^utm:(d+):([NS])$/.exec(e.target.value), k = e.target.value;
+      if (!k) return;
+      state.systems[sheet] = m ? { kind: "utm", zone: +m[1], south: m[2] === "S" } : { kind: k };
+    } else if (act === "no" || act === "undo") {
+      delete state.systems[sheet];
+      if (act === "no") state.systemNo[sheet] = true;   // Undo: back to as typed, asked again
+    } else return;
+    refreshLinks();
   }
 
   /* ---------------- linking groups to polygons ---------------- */
@@ -756,6 +863,7 @@
   function refreshLinks() {
     const wrap = $("rp-links-wrap");
     state.rows = buildRows();
+    renderSystems();
     if (state.places) placesStatus();
     const ready = state.rows.length > 0;
     $("rp-run").disabled = !ready;
@@ -1617,6 +1725,10 @@
       }
     });
     $("rp-run").addEventListener("click", run);
+    if ($("rp-systems")) {
+      $("rp-systems").addEventListener("click", onSystemAction);
+      $("rp-systems").addEventListener("change", onSystemAction);
+    }
     // The typing-habits choice is remembered on this device (shared with Batch).
     try {
       $("rp-habits-opt").checked = localStorage.getItem("cordify_habits_v1") === "1";
