@@ -54,6 +54,14 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   Everest / Kalianpur 1937 or 1975 (older Survey of India maps, about
   300–400 m off in North-East India) to WGS 84. Download the same workbook with the new
   columns, or CSV (one per sheet, zipped, opens correctly in Excel).
+  "Scan first" (also in Repair) reads the file before anything is converted and
+  reports in three to five bullet points: how many rows read as typed and why
+  the rest did not (two readings, a wrong character, a missing value, swapped),
+  whether a sheet is in another coordinate system, how many of the rows with
+  two readings "Use typing habits" would settle, which converted rows deserve
+  a look (far from the rest, duplicates, typed roughly) and where the points
+  sit. Each suggestion is a button (read as UTM zone 46N, tick typing habits,
+  open Repair), "Copy report" copies the text, and nothing is changed by a scan.
   Converting runs in the background with a progress bar and a Cancel button.
   CSV files over 5 MB are never loaded whole: they are read from disk a piece
   at a time (a million rows takes a few seconds) and downloaded as CSV. The
@@ -174,6 +182,7 @@ assets/js/repair-ui.js   Repair tab: boundary/data upload, review, export
 assets/js/batch.js       Batch convert (Convert tab): the screen
 assets/js/pinpoint.js    Points to the exact wrong character in a typed coordinate (no UI; also runs in Node)
 assets/js/systems.js     Other coordinate systems: UTM, MGRS, Web Mercator, radians, swapped, datums (no UI; also runs in Node)
+assets/js/report.js      Scan first: the short report on a file before converting (no UI; also runs in Node)
 assets/js/habits.js      Typing habits: learns how a sheet was typed, to choose between two readings (no UI; also runs in Node)
 assets/js/batch-core.js  Batch convert: reading rows, finding columns, CSV (no UI; also runs in Node)
 assets/js/batch-worker.js Batch convert: background worker that does the converting
@@ -196,6 +205,7 @@ tests/repair-engine.test.js  Repair tests
 tests/pinpoint.test.js   Wrong-character tests
 tests/habits.test.js     Typing-habit tests
 tests/systems.test.js    Coordinate-system tests (made-up values)
+tests/report.test.js     Scan-first report tests (made-up values)
 package.json             Test tooling only (the app needs no install)
 ```
 

@@ -9,7 +9,7 @@
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
 // This copy's folder on the site, e.g. /cordify/
 const BASE = new URL('./', self.location).pathname;
-const CACHE_NAME = 'cordify-cache-v32';
+const CACHE_NAME = 'cordify-cache-v33';
 const NETWORK_WAIT_MS = 3000;
 const PRECACHE = [
   './',
@@ -36,6 +36,7 @@ const PRECACHE = [
   './assets/js/systems.js',
   './assets/js/batch-core.js',
   './assets/js/habits.js',
+  './assets/js/report.js',
   './assets/js/batch-worker.js',
   './assets/js/db.js',
   './assets/js/geo-io.js',

@@ -740,6 +740,57 @@
     return rows;
   }
 
+  /* ---------------- scan first: a short report before repairing ---------------- */
+
+  // The coordinate rows as the sheet holds them, one report sheet per coordinate set in use.
+  function scanSheets() {
+    const out = [];
+    if (state.source === "paste") {
+      const rows = $("rp-paste").value.split(/\n/).filter(l => l.trim()).map(l => [ l ]);
+      out.push({ name: "Pasted", head: [ "Pasted" ], mode: "one", one: 0, lat: 0, lon: 0, found: rows.length > 0, system: state.systems.Pasted || null, rows });
+      return out;
+    }
+    for (const [ name, s ] of Object.entries(state.sheets)) {
+      const sets = s.sets.filter(x => x.use);
+      if (s.h < 0 || !sets.length) continue;
+      const rows = [];
+      for (let i = s.h + 1; i < s.aoa.length; i++) {
+        const r = s.aoa[i];
+        if (r && r.some(c => String(c).trim() !== "")) rows.push(r);
+      }
+      for (const set of sets) {
+        const label = sets.length > 1 ? `${name} · ${set.label}` : name;
+        out.push({ name: label, sheet: name, head: s.head, mode: set.mode, one: set.one, lat: set.lat, lon: set.lon, found: true, system: state.systems[name] || null, rows });
+      }
+    }
+    return out;
+  }
+
+  function scanFirst() {
+    const Rep = window.CordifyReport;
+    if (!Rep) return;
+    const sheets = scanSheets();
+    if (!sheets.length) return;
+    const ref = state.userFeatures.length ? { inside: (lat, lon) => !!R.featureAt(state.userFeatures, lon, lat) } : null;
+    const result = Rep.scan(sheets, { ref, habitsOn: $("rp-habits-opt").checked });
+    // Which workbook sheet a report sheet came from, for the "Read as" action.
+    result.bullets.forEach(b => (b.acts || []).forEach(a => {
+      if (a.type === "system") a.sheet = (sheets.find(s => s.name === a.sheet) || {}).sheet || a.sheet;
+    }));
+    Rep.render($("rp-report"), result, { show: a => a.type !== "repair", onAct: onReportAction });
+  }
+
+  function onReportAction(act) {
+    if (act.type === "system") {
+      state.systems[act.sheet] = act.system;
+      refreshLinks();
+    } else if (act.type === "habits") {
+      $("rp-habits-opt").checked = true;
+      $("rp-habits-opt").dispatchEvent(new Event("change"));
+    } else return;
+    scanFirst();
+  }
+
   /* ---------------- other coordinate systems ---------------- */
 
   // A sheet read in another system (UTM, MGRS, radians, swapped…): its rows are turned into
@@ -851,6 +902,8 @@
     if (state.places) placesStatus();
     const ready = state.rows.length > 0;
     $("rp-run").disabled = !ready;
+    if ($("rp-scan")) $("rp-scan").disabled = !ready;
+    if (!ready && $("rp-report")) $("rp-report").hidden = true;
     const noBoundary = !state.userFeatures.length;
     setStatus("rp-run-status", !ready ? "Load coordinates first" :
       noBoundary ? `${state.rows.length} coordinates ready — no boundary loaded, so the area will be estimated from the correct rows (less reliable)` :
@@ -1709,6 +1762,7 @@
       }
     });
     $("rp-run").addEventListener("click", run);
+    if ($("rp-scan")) $("rp-scan").addEventListener("click", scanFirst);
     if ($("rp-systems")) {
       $("rp-systems").addEventListener("click", onSystemAction);
       $("rp-systems").addEventListener("change", onSystemAction);
