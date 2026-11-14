@@ -17,7 +17,7 @@
   </script>
 </head>
 <body>
-<div class="cordify-channel-bar" style="padding:7px 14px;font:600 13px/1.45 system-ui,'Segoe UI',Roboto,sans-serif;background:#7a4a00;color:#fff;text-align:center">You are using the <b>Previous</b> version (v3.7.0, 2026-11-14). Use it if the latest version gives you trouble. It works online only. <a href="../" style="color:#fff;text-decoration:underline">Go to the latest version</a></div>
+<div class="cordify-channel-bar" style="padding:7px 14px;font:600 13px/1.45 system-ui,'Segoe UI',Roboto,sans-serif;background:#7a4a00;color:#fff;text-align:center">You are using the <b>Previous</b> version (v3.8.0, 2026-11-14). Use it if the latest version gives you trouble. It works online only. <a href="../" style="color:#fff;text-decoration:underline">Go to the latest version</a></div>
 <div class="app">
 
   <header class="app-header">
@@ -269,6 +269,7 @@
         <div class="actions" id="batch-actions" hidden>
           <button class="btn-primary" id="batch-run" type="button">Convert all rows</button>
           <label class="habit-opt" data-tip="For values that could be read two ways, such as 26°41'451 (26°41.451' or 26°41'45.1&quot;): use the reading that matches the other value in the same cell, or rows of the sheet typed the same way (same ° ' &quot; marks, separator, N/E letters and elevation). Settled rows are orange, to check. Off: such rows stay not converted."><input type="checkbox" id="batch-habits"> Use typing habits to choose between readings</label>
+          <label class="habit-opt" data-tip="The datum the coordinates were measured on. GPS, phones and Google Earth use WGS 84. Older Survey of India maps use Everest (Kalianpur), which sits about 300–400 m away in North-East India; picking it moves every point onto WGS 84 (good to about 10–20 m).">Source datum <select id="batch-datum"><option value="wgs84">WGS 84 (GPS, Google Earth)</option></select></label>
           <button id="batch-download-xlsx" type="button" disabled data-tip="The same workbook with the new columns added to each converted sheet, and rows coloured by result (a Legend sheet explains the colours). Other sheets are kept as they are.">Download XLSX</button>
           <button id="batch-download-csv" type="button" disabled data-tip="One CSV for one sheet, or a zip with one CSV per sheet. Opens correctly in Excel, including the ° symbol.">Download CSV</button>
           <button id="batch-map" type="button" class="map-btn" disabled data-tip="Shows the converted points on the Map tab. Very large files are thinned evenly to 50,000 points.">Show on map</button>
@@ -283,6 +284,7 @@
           <button type="button" class="btn-quiet" id="batch-cancel">Cancel</button>
         </div>
         <p class="hint batch-status" id="batch-status" role="status"></p>
+        <div class="sys-found" id="batch-systems" hidden></div>
         <details class="habits-found" id="batch-habits-found" hidden>
           <summary>Typing habits found</summary>
           <div id="batch-habits-list"></div>
@@ -447,6 +449,7 @@
         </div>
         <label class="rp-check" data-tip="For values that could be read two ways, such as 26°41'451 (26°41.451' or 26°41'45.1&quot;): use the reading that matches the other value in the same cell, or rows of the same sheet typed the same way. If that reading is outside the boundary, the row is flagged for you instead."><input type="checkbox" id="rp-habits-opt"> Use typing habits to choose between readings — changed rows are marked for checking</label>
         <label class="rp-check" data-tip="Also tries changing one degree digit (29.84 → 26.84). Such fixes are always orange, so you check each one."><input type="checkbox" id="rp-digitfix" checked> Also try a wrong degree digit (29.84 → 26.84) — always marked for checking</label>
+        <div class="sys-found" id="rp-systems" hidden></div>
         <div class="actions rp-run-row">
           <button type="button" class="btn-primary" id="rp-run" disabled data-tip="Tries every sensible reading of each value and keeps only readings inside the area. Takes about a second.">Repair coordinates</button>
           <span id="rp-run-status" class="hint">Load coordinates first</span>
@@ -551,20 +554,21 @@
   <script src="./assets/js/grid.js?v=2"></script>
   <script src="./assets/js/db.js?v=1"></script>
   <script src="./assets/js/historyStore.js?v=2"></script>
-  <script src="./assets/js/app.js?v=17"></script>
+  <script src="./assets/js/app.js?v=18"></script>
   <script src="./assets/js/repair-engine.js?v=7"></script>
   <script src="./assets/js/xlsx-color.js?v=1"></script>
   <script src="./assets/js/reference.js?v=1"></script>
-  <script src="./assets/js/repair-ui.js?v=11"></script>
+  <script src="./assets/js/repair-ui.js?v=12"></script>
   <script src="./assets/js/brand-swap.js?v=2"></script>
   <script src="./assets/js/looks.js?v=1"></script>
   <script src="./assets/js/versions.js?v=1"></script>
-  <script src="./assets/js/pinpoint.js?v=2"></script>
-  <script src="./assets/js/batch-core.js?v=5"></script>
+  <script src="./assets/js/pinpoint.js?v=3"></script>
+  <script src="./assets/js/systems.js?v=2"></script>
+  <script src="./assets/js/batch-core.js?v=8"></script>
   <script src="./assets/js/habits.js?v=1"></script>
   <script src="./assets/js/geo-io.js?v=2"></script>
   <script src="./assets/js/gis-export.js?v=2"></script>
-  <script src="./assets/js/batch.js?v=13"></script>
+  <script src="./assets/js/batch.js?v=14"></script>
   <script src="./assets/js/sheet.js?v=5"></script>
   <script src="./assets/js/scan-core.js?v=2"></script>
   <script src="./assets/js/scan.js?v=2"></script>

@@ -43,7 +43,7 @@
   function getWorker() {
     if (worker || typeof Worker === "undefined") return worker;
     try {
-      worker = new Worker("./assets/js/batch-worker.js?v=12");
+      worker = new Worker("./assets/js/batch-worker.js?v=15");
     } catch (e) {
       return null;
     }
@@ -80,15 +80,16 @@
   }
 
   // Coordinate cells -> numbers. In the worker when there is one, else here.
-  async function convertColumns(mode, a, b, onProgress) {
+  async function convertColumns(mode, a, b, onProgress, how = {}) {
+    const system = how.system || null, datum = how.datum || null;
     try {
-      return await ask({ type: "columns", mode, a, b }, onProgress);
+      return await ask({ type: "columns", mode, a, b, system, datum }, onProgress);
     } catch (e) {
       if (e.message !== "no-worker") throw e;
     }
     const B = BC(), n = a.length;
     const lat = new Float64Array(n), lon = new Float64Array(n), st = new Uint8Array(n), precision = new Float32Array(n), errors = [];
-    const cfg = { mode, one: 0, lat: 0, lon: 1 };
+    const cfg = { mode, one: 0, lat: 0, lon: 1, system, datum };
     for (let i = 0; i < n; i++) {
       const res = B.readRow([ a[i], b ? b[i] : null ], cfg);
       st[i] = B.statusOf(res);
@@ -321,11 +322,12 @@
     setBusy(true, "Starting…");
     const B = BC();
     const out = { f, sets: {}, names, ok: 0, failed: 0, empty: 0, mistyped: 0, check: 0, coarse: [] };
+    const datum = datumOf();
     try {
       for (const n of names) {
         const s = state.sheets[n];
         if (s.big) {
-          const m = await ask({ type: "csv", file: state.big.file, delim: state.big.delim, cfg: { mode: s.mode, one: s.one, lat: s.lat, lon: s.lon } },
+          const m = await ask({ type: "csv", file: state.big.file, delim: state.big.delim, cfg: { mode: s.mode, one: s.one, lat: s.lat, lon: s.lon, system: s.system || null, datum } },
             p => progress(p.done / p.total, `${count(p.rows)} rows read`));
           out.sets[n] = { big: true, n: m.n, lat: m.lat, lon: m.lon, status: m.status, recNo: m.recNo, checks: new Map(m.checks) };
           out.check += m.counts.check;
@@ -347,7 +349,7 @@
           } else a.push(r[s.one] ?? "");
         }
         const label = names.length > 1 ? `${n}: ` : "";
-        const m = await convertColumns(s.mode, a, b, p => progress(p.done / p.total, `${label}${count(p.done)} of ${count(p.total)} rows`));
+        const m = await convertColumns(s.mode, a, b, p => progress(p.done / p.total, `${label}${count(p.done)} of ${count(p.total)} rows`), { system: s.system, datum });
         // Converted rows worth a second look: far from the rest, duplicated, or typed too roughly.
         const checks = B.qualityChecks(m.lat, m.lon, m.status, m.precision, idx.map(i => i + 1));
         out.check += checks.size;
@@ -379,8 +381,17 @@
       }
     }
     showHabits(habits);
+    // Another coordinate system (UTM, MGRS, radians, swapped…): found per sheet, always asked first.
+    let systems = [];
+    try {
+      progress(1, "Checking the coordinate system…");
+      systems = await findSystems(out);
+    } catch (err) {
+      systems = [];
+    }
     setBusy(false);
     state.results = out;
+    showSystems(systems);
     const total = out.ok + out.failed;
     const settled = habits ? habits.n : 0;
     const msg = `Converted ${count(out.ok)} of ${count(total)} row${total === 1 ? "" : "s"}` +
@@ -403,6 +414,139 @@
     $("batch-view").querySelector('[value="repaired"]').textContent = `Repaired (${count(settled)})`;
     if (settled) gisButtons(false);
     renderPreview();
+  }
+
+  /* ---------- other coordinate systems ---------- */
+
+  const DATUM_KEY = "cordify_datum_v1";
+  const SYS_SAMPLE = 400;   // rows per sheet looked at to find the system
+  const datumOf = () => ($("batch-datum") && $("batch-datum").value) || "wgs84";
+
+  // Where the points must be: the boundary and village locations saved in Repair, if any.
+  async function refArea() {
+    const Ref = window.CordifyReference, R = window.CordifyRepair;
+    if (!Ref || !R) return null;
+    try {
+      const b = await Ref.loadBoundary(), p = await Ref.loadPlaces();
+      const features = b && Array.isArray(b.src) && b.src.length ? b.src.map((f, j) => R.buildFeature({ rings: f.rings, props: f.props }, j)) : null;
+      const list = p && Array.isArray(p.list) ? p.list.filter(q => Number.isFinite(q.lat) && Number.isFinite(q.lon)) : [];
+      if (!features && !list.length) return null;
+      const ref = {};
+      if (features) ref.inside = (lat, lon) => !!R.featureAt(features, lon, lat);
+      if (list.length) {
+        // About 20 km cells; a point is near when a village is in its cell or the next ones.
+        const key = (a, b) => `${Math.floor(a * 5)}|${Math.floor(b * 5)}`, cells = new Set(list.map(q => key(q.lat, q.lon)));
+        ref.near = (lat, lon) => {
+          for (const da of [ -0.2, 0, 0.2 ]) for (const db of [ -0.2, 0, 0.2 ]) if (cells.has(key(lat + da, lon + db))) return true;
+          return false;
+        };
+      }
+      return ref;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Per sheet: the system already chosen, or a suggestion from a sample of its rows.
+  async function findSystems(out) {
+    const S = window.CordifySystems, B = BC();
+    if (!S) return [];
+    let ref;
+    const list = [];
+    for (const name of out.names) {
+      const set = out.sets[name], s = state.sheets[name];
+      if (s.system) {
+        list.push({ name, using: s.system });
+        continue;
+      }
+      if (s.systemNo || !set.n) continue;
+      const step = Math.max(1, Math.ceil(set.n / SYS_SAMPLE)), ids = [];
+      for (let i = 0; i < set.n; i += step) if (set.status[i] !== B.EMPTY) ids.push(i);
+      if (!ids.length) continue;
+      // A sheet whose rows nearly all read as degrees needs no question.
+      const okShare = ids.filter(i => set.status[i] === B.OK).length / ids.length;
+      if (okShare > 0.9 && !ids.some(i => set.status[i] === B.OK && Math.abs(set.lat[i]) < 1.6 && Math.abs(set.lon[i]) < 3.2)) continue;
+      let cellsOf;
+      if (set.big) {
+        const m = await ask({ type: "window", ids });
+        const cells = new Map(m.rows.map(r => [ r.i, r.cells ]));
+        cellsOf = i => cells.get(i) || [];
+      } else {
+        cellsOf = i => {
+          const r = s.aoa[set.rowIndex[i]];
+          return s.mode === "one" ? [ r[s.one] ] : [ r[s.lat], r[s.lon] ];
+        };
+      }
+      const rows = ids.map(i => ({ cells: cellsOf(i).map(c => c ?? "") }));
+      const swapped = set.errors ? ids.filter(i => /swap/i.test(set.errors.get(i) || "")).length / ids.length : 0;
+      const head = (s.mode === "one" ? [ s.head[s.one] ] : [ s.head[s.lat], s.head[s.lon] ]).map(h => String(h ?? ""));
+      if (ref === undefined) ref = await refArea();
+      const d = S.detect(rows, ref, { swapped, head });
+      if (d) list.push({ name, d });
+    }
+    return list;
+  }
+
+  // The systems a person can pick: zone in each cell, Web Mercator, UTM 1N…60S, radians, swapped.
+  function systemOptions(chosen) {
+    const S = window.CordifySystems, keyOf = sys => sys.kind === "utm" ? `utm:${sys.zone}:${sys.south ? "S" : "N"}` : sys.kind;
+    const all = [ { kind: "cell" }, { kind: "mercator" } ];
+    for (const south of [ false, true ]) for (let z = 1; z <= 60; z++) all.push({ kind: "utm", zone: z, south });
+    all.push({ kind: "radians" }, { kind: "swap" });
+    const sel = chosen ? keyOf(chosen) : "";
+    return `<option value="">Choose…</option>` + all.map(sys => `<option value="${keyOf(sys)}"${keyOf(sys) === sel ? " selected" : ""}>${esc(S.labelOf(sys))}</option>`).join("");
+  }
+  function systemFromKey(k) {
+    const m = /^utm:(\d+):([NS])$/.exec(k);
+    return m ? { kind: "utm", zone: +m[1], south: m[2] === "S" } : k ? { kind: k } : null;
+  }
+
+  function showSystems(list) {
+    const box = $("batch-systems"), S = window.CordifySystems;
+    state.systemList = list;
+    if (!box) return;
+    if (!list.length || !S) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    const many = state.results && state.results.names.length > 1;
+    box.innerHTML = list.map(x => {
+      const lab = many ? `“${esc(x.name)}”: ` : "";
+      if (x.using) {
+        return `<div class="sys-row" data-sheet="${esc(x.name)}"><span>${lab}read as <strong>${esc(S.labelOf(x.using))}</strong>.</span>` +
+          `<button type="button" data-act="undo">Undo</button></div>`;
+      }
+      const d = x.d;
+      const q = d.system ? `${lab}these look like <strong>${esc(d.label)}</strong> (${esc(d.why)}). Read them this way?`
+        : `${lab}these look like <strong>${esc(d.label)}</strong>: ${esc(d.why)}.`;
+      return `<div class="sys-row" data-sheet="${esc(x.name)}"><span>${q}</span>` +
+        (d.system ? `<button type="button" class="btn-primary" data-act="yes">Yes</button>` : "") +
+        `<label>${d.system ? "Pick another" : "System"} <select data-act="pick">${systemOptions(null)}</select></label>` +
+        `<button type="button" class="btn-quiet" data-act="no">No, leave as is</button></div>`;
+    }).join("");
+    box.hidden = false;
+  }
+
+  function onSystemAction(e) {
+    const row = e.target.closest(".sys-row"), act = e.target.dataset.act;
+    if (!row || !act || busy) return;
+    if ((act === "pick") !== (e.type === "change")) return;
+    const name = row.dataset.sheet, s = state.sheets[name], x = (state.systemList || []).find(y => y.name === name);
+    if (!s) return;
+    if (act === "yes" && x && x.d && x.d.system) s.system = x.d.system;
+    else if (act === "pick") {
+      const sys = systemFromKey(e.target.value);
+      if (!sys) return;
+      s.system = sys;
+    } else if (act === "no") {
+      s.systemNo = true;
+      showSystems((state.systemList || []).filter(y => y.name !== name));
+      return;
+    } else if (act === "undo") {
+      s.system = null;   // back to as typed; the question shows again
+    } else return;
+    run();
   }
 
   /* ---------- typing habits (optional) ---------- */
@@ -953,6 +1097,7 @@
   function clearResults() {
     state.results = null;
     $("batch-habits-found").hidden = true;
+    if ($("batch-systems")) $("batch-systems").hidden = true;
     view = new Int32Array(0);
     drawToken++;
     $("batch-preview-wrap").hidden = true;
@@ -990,6 +1135,25 @@
         localStorage.setItem(HABITS_KEY, e.target.checked ? "1" : "0");
       } catch (err) {}
     });
+    // The source datum is remembered on this device; changing it converts again.
+    const dsel = $("batch-datum"), S = window.CordifySystems;
+    if (dsel && S) {
+      dsel.innerHTML = Object.keys(S.DATUMS).map(k => `<option value="${k}">${esc(S.DATUMS[k].label)}</option>`).join("");
+      try {
+        const saved = localStorage.getItem(DATUM_KEY);
+        if (saved && S.DATUMS[saved]) dsel.value = saved;
+      } catch (e) {}
+      dsel.addEventListener("change", () => {
+        try {
+          localStorage.setItem(DATUM_KEY, dsel.value);
+        } catch (e) {}
+        if (state.results) run();
+      });
+    }
+    if ($("batch-systems")) {
+      $("batch-systems").addEventListener("click", onSystemAction);
+      $("batch-systems").addEventListener("change", onSystemAction);
+    }
     $("batch-cancel").addEventListener("click", () => stopWorker(new Error("cancelled")));
     $("batch-download-xlsx").addEventListener("click", downloadXlsx);
     $("batch-download-csv").addEventListener("click", downloadCsv);
