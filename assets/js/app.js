@@ -15,7 +15,6 @@ if (document.readyState === "loading") {
 
 function initCordifyApp() {
   (function() {
-    const MAX_HISTORY = 1e3;
     // Reading and writing coordinates lives in core.js, shared with Batch, the sheet and Repair.
     const Core = window.CordifyCore;
     const { parseDmsString, parseCoord, parseDecimal, splitPair, inLatRange, inLonRange } = Core;
@@ -27,172 +26,61 @@ function initCordifyApp() {
       const p = window.CordifyGrid ? window.CordifyGrid.project(lat, lon) : null;
       return p && !p.error ? p : undefined;
     };
-    const OLD_KEY = "cordify_history_v1";
-    function _fallback_getHistory() {
-      try {
-        const raw = localStorage.getItem(OLD_KEY);
-        const arr = raw ? JSON.parse(raw) : [];
-        return Array.isArray(arr) ? arr : [];
-      } catch {
-        return [];
-      }
-    }
-    function _fallback_setHistory(arr) {
-      try {
-        localStorage.setItem(OLD_KEY, JSON.stringify(arr.slice(0, MAX_HISTORY)));
-      } catch {}
-    }
-    function _fallback_addHistory(rec) {
-      const arr = _fallback_getHistory();
-      arr.unshift({
-        type: rec.type || "",
-        input: String(rec.input ?? ""),
-        result: String(rec.result ?? ""),
-        date: rec.date || Date.now(),
-        lat: rec.lat,
-        lon: rec.lon
-      });
-      _fallback_setHistory(arr);
-    }
-    function _fallback_removeByIndex(idx) {
-      try {
-        const arr = _fallback_getHistory();
-        if (typeof idx !== "number" || idx < 0 || idx >= arr.length) {
-          return false;
-        }
-        arr.splice(idx, 1);
-        _fallback_setHistory(arr);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-    function _fallback_clearHistory() {
-      try {
-        localStorage.removeItem(OLD_KEY);
-      } catch {}
-    }
+    // History lives in historyStore.js (IndexedDB). These are the records as this screen shows them.
+    const Store = () => window.historyStore;
     function getHistory() {
-      if (window.historyStore && typeof window.historyStore.getAll === "function") {
-        return window.historyStore.getAll().map(r => ({
-          id: r.id,
-          ts: r.ts || r.date,
-          type: r.type || "",
-          input: r.input || "",
-          result: r.output || r.result || "",
-          date: r.date || r.ts || r.ts,
-          lat: r.lat,
-          lon: r.lon,
-          grid: r.grid
-        }));
-      }
-      return _fallback_getHistory();
+      if (!Store()) return [];
+      return Store().getAll().map(r => ({
+        id: r.id,
+        ts: r.ts || r.date,
+        type: r.type || "",
+        input: r.input || "",
+        result: r.output || r.result || "",
+        date: r.date || r.ts,
+        lat: r.lat,
+        lon: r.lon,
+        grid: r.grid
+      }));
     }
     function addHistory(rec) {
-      if (window.historyStore && typeof window.historyStore.add === "function") {
-        try {
-          window.historyStore.add({
-            type: rec.type,
-            input: String(rec.input ?? ""),
-            output: String(rec.result ?? ""),
-            date: rec.date,
-            // Full-precision numbers, so the map and exports never depend on the rounded text.
-            lat: rec.lat,
-            lon: rec.lon,
-            grid: rec.grid,
-            meta: rec.meta || {}
-          });
-          return;
-        } catch (e) {}
-      }
-      _fallback_addHistory(rec);
+      if (!Store()) return;
+      Store().add({
+        type: rec.type,
+        input: String(rec.input ?? ""),
+        output: String(rec.result ?? ""),
+        date: rec.date,
+        // Full-precision numbers, so the map and exports never depend on the rounded text.
+        lat: rec.lat,
+        lon: rec.lon,
+        grid: rec.grid,
+        meta: rec.meta || {}
+      });
     }
-    function clearHistory() {
-      if (window.historyStore && typeof window.historyStore.clear === "function") {
-        try {
-          window.historyStore.clear();
-          return;
-        } catch (e) {}
-      }
-      _fallback_clearHistory();
-    }
-    function removeHistoryAt(indexOrId) {
-      if (window.historyStore && typeof window.historyStore.remove === "function" && typeof indexOrId === "string") {
-        try {
-          return window.historyStore.remove(indexOrId);
-        } catch (e) {}
-      }
-      if (window.historyStore && typeof window.historyStore.getAll === "function" && typeof indexOrId === "number") {
-        try {
-          const arr = window.historyStore.getAll();
-          const rec = arr[indexOrId];
-          if (rec && rec.id) {
-            return window.historyStore.remove(rec.id);
-          }
-        } catch (e) {}
-      }
-      if (typeof indexOrId === "number") {
-        return _fallback_removeByIndex(indexOrId);
-      }
-      return false;
-    }
-    async function migrateHistoryToStore() {
-      if (!window.historyStore || typeof window.historyStore.add !== "function") {
-        return;
-      }
+    const clearHistory = () => Store() && Store().clear();
+    const removeHistory = id => !!Store() && Store().remove(id);
+    // History saved by the very first versions (localStorage "cordify_history_v1") is moved across once.
+    function migrateOldHistory() {
+      const OLD_KEY = "cordify_history_v1";
       try {
         const raw = localStorage.getItem(OLD_KEY);
-        if (!raw) {
-          return;
-        }
+        if (!raw || !Store()) return;
         const arr = JSON.parse(raw);
-        if (!Array.isArray(arr) || !arr.length) {
-          return;
-        }
-        const existing = new Set(window.historyStore.getAll().map(r => `${r.input}||${r.output}||${r.ts || r.date || ""}`));
-        for (const it of arr) {
-          const input = it.input || "";
-          const output = it.result || it.output || "";
-          const ts = it.date || it.ts || Date.now();
-          const key = `${input}||${output}||${ts}`;
-          if (existing.has(key)) {
-            continue;
+        if (Array.isArray(arr)) {
+          const existing = new Set(Store().getAll().map(r => `${r.input}||${r.output}||${r.ts || r.date || ""}`));
+          for (const it of arr) {
+            const input = it.input || "", output = it.result || it.output || "", ts = it.date || it.ts || Date.now();
+            if (!existing.has(`${input}||${output}||${ts}`)) Store().add({ type: it.type || "unknown", input, output, date: ts, meta: it.meta || {} });
           }
-          window.historyStore.add({
-            type: it.type || "unknown",
-            input: input,
-            output: output,
-            date: ts,
-            meta: it.meta || {}
-          });
         }
-        try {
-          localStorage.removeItem(OLD_KEY);
-        } catch (e) {}
-      } catch (e) {
-      }
+        localStorage.removeItem(OLD_KEY);
+      } catch (e) {}
     }
-    try {
-      migrateHistoryToStore();
-    } catch (e) {}
+    migrateOldHistory();
     window._cordify_addHistory = addHistory;
     (() => {
-      try {
-        migrateHistoryToStore();
-      } catch (e) {}
       window.addEventListener("historyStore:change", () => {
         if (document.getElementById("history-tab")?.style.display !== "none") {
           renderHistoryTable();
-        }
-      });
-      window.addEventListener("storage", e => {
-        if (!e) {
-          return;
-        }
-        if (e.key === "cordify_history_v2" || e.key === OLD_KEY) {
-          if (document.getElementById("history-tab")?.style.display !== "none") {
-            renderHistoryTable();
-          }
         }
       });
       const convertTab = document.getElementById("convert-tab");
@@ -361,7 +249,7 @@ function initCordifyApp() {
       document.getElementById("convert-tab")?.addEventListener("input", persistInputs);
       document.getElementById("history-export-json")?.addEventListener("click", () => {
         try {
-          const json = window.historyStore && typeof window.historyStore.exportAll === "function" ? window.historyStore.exportAll() : JSON.stringify(getHistory());
+          const json = Store() ? Store().exportAll() : JSON.stringify(getHistory());
           const blob = new Blob([ json ], {
             type: "application/json"
           });
@@ -385,10 +273,6 @@ function initCordifyApp() {
         }
         clearHistory();
         renderHistoryTable();
-      });
-      document.getElementById("history-migrate")?.addEventListener("click", () => {
-        migrateHistoryToStore();
-        alert("Migration started (check console for errors).");
       });
       function persistInputs() {
         const keys = [ "dms_pair", "dms_lat_string", "dms_lon_string", "dd_pair", "dd_lat", "dd_lon" ];
@@ -432,12 +316,7 @@ function initCordifyApp() {
           showBtn.type = "button";
           showBtn.textContent = "Show";
           showBtn.className = "small";
-          showBtn.addEventListener("click", () => {
-            try {
-              showHistoryItemOnMap(item.id ?? i);
-            } catch (e) {
-            }
-          });
+          showBtn.addEventListener("click", () => showHistoryItemOnMap(item.id));
           const exportBtn = document.createElement("button");
           exportBtn.type = "button";
           exportBtn.textContent = "Export";
@@ -457,8 +336,7 @@ function initCordifyApp() {
             if (!ok) {
               return;
             }
-            const success = removeHistoryAt(item.id ?? i);
-            if (success) {
+            if (removeHistory(item.id)) {
               renderHistoryTable();
             } else {
               alert("Failed to remove history item.");
@@ -1014,19 +892,8 @@ function initCordifyApp() {
       }, 300);
     }
     window.showCurrentInMap = showCurrentInMap;
-    function showHistoryItemOnMap(idOrIndex) {
-      let rec = null;
-      if (window.historyStore && typeof window.historyStore.getById === "function" && typeof idOrIndex === "string") {
-        rec = window.historyStore.getById(idOrIndex);
-      }
-      if (!rec) {
-        const h = getHistory();
-        if (typeof idOrIndex === "number") {
-          rec = h[idOrIndex];
-        } else {
-          rec = h.find(r => r.id === idOrIndex) || null;
-        }
-      }
+    function showHistoryItemOnMap(id) {
+      const rec = getHistory().find(r => r.id === id) || null;
       if (!rec) {
         showFeedback("History item not found", "error");
         return;
