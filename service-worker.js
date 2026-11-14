@@ -1,12 +1,16 @@
 // Cordify service worker
 // Strategy:
 //   - Navigations + same-origin scripts/styles: NETWORK-FIRST (so users get
-//     updates immediately), falling back to cache when offline.
+//     updates immediately). When the network has not answered within
+//     NETWORK_WAIT_MS and a stored copy exists, the stored copy is used, so the
+//     app opens quickly on a slow or dead connection; the download still finishes
+//     in the background and is stored for next time.
 //   - Everything else: cache-first.
 // Bump CACHE_NAME whenever you ship changes you want users to receive.
 // This copy's folder on the site, e.g. /cordify/
 const BASE = new URL('./', self.location).pathname;
-const CACHE_NAME = 'cordify-cache-v29';
+const CACHE_NAME = 'cordify-cache-v30';
+const NETWORK_WAIT_MS = 3000;
 const PRECACHE = [
   './',
   './index.html',
@@ -88,20 +92,30 @@ self.addEventListener('fetch', event => {
   );
 
   if (isAppCode) {
-    // Network-first: fresh code when online, cached copy when offline.
+    // Network-first: fresh code when it comes quickly; the stored copy when the network is
+    // slow or offline. Only a good copy is stored: a 404 or 500 during a deploy must never
+    // replace a working file.
     event.respondWith((async () => {
-      try {
-        const fresh = await fetch(req);
-        // Only a good copy is stored: a 404 or 500 during a deploy must never replace a working file.
-        if (fresh.ok) {
-          const cache = await caches.open(CACHE_NAME);
-          cache.put(req, fresh.clone());
-        }
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(req, { ignoreSearch: true });
+      const network = fetch(req).then(fresh => {
+        if (fresh.ok) cache.put(req, fresh.clone());
         return fresh;
-      } catch (e) {
-        const cached = await caches.match(req, { ignoreSearch: true });
-        return cached || caches.match('./index.html', { ignoreSearch: true });
+      });
+      if (!cached) {
+        // Nothing stored yet (first visit, or a file added since): wait for the network.
+        try {
+          return await network;
+        } catch (e) {
+          return req.mode === 'navigate' ? caches.match('./index.html', { ignoreSearch: true }) : Response.error();
+        }
       }
+      const timer = new Promise(resolve => setTimeout(() => resolve(null), NETWORK_WAIT_MS));
+      const quick = await Promise.race([ network.catch(() => null), timer ]);
+      if (quick && quick.ok) return quick;
+      // Slow, offline, or a server error: the stored copy; let the download finish and be stored.
+      event.waitUntil(network.catch(() => {}));
+      return cached;
     })());
     return;
   }
