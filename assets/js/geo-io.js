@@ -135,11 +135,14 @@
 
   // Pin colours for Google Earth, the same as Cordify's review table (KML colours are aabbggrr).
   const KML_COLOURS = { ok: "ff327d2e", fixed: "ff0097c9", check: "ff007be0", bad: "ff2828c6", confirmed: "ffc06515" };
-  // The pop-up shows only the pin's table (no directions links, no repeated name).
-  const BALLOON = "<BalloonStyle><text>$[description]</text></BalloonStyle>";
-  const KML_STYLES = Object.entries(KML_COLOURS).map(([ id, c ]) =>
-    `<Style id="${id}"><IconStyle><color>${c}</color><scale>0.9</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>${BALLOON}</Style>`).join("") +
-    `<Style id="pin">${BALLOON}</Style>`;
+  // The pop-up shows only the pin's table (no directions links, no repeated name). Its look is
+  // set here once, not on every row of every pin; a viewer that skips it still gets ruled cells.
+  const BALLOON = "<BalloonStyle><text><![CDATA[<style>.cordify-pin{border-collapse:collapse;font:12px sans-serif}" +
+    ".cordify-pin th{text-align:left;background:#eee}</style>$[description]]]></text></BalloonStyle>";
+  // Without the table, the viewer's own pop-up is kept.
+  const kmlStyles = table => Object.entries(KML_COLOURS).map(([ id, c ]) =>
+    `<Style id="${id}"><IconStyle><color>${c}</color><scale>0.9</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle>${table ? BALLOON : ""}</Style>`).join("") +
+    `<Style id="pin">${table ? BALLOON : ""}</Style>`;
 
   // A pin's columns as a table in its description. Every viewer shows a description; some
   // ignore KML data fields. The location is one row, an "OK" status is left out, and the typed
@@ -170,8 +173,8 @@
       rows.push([ PIN_LABELS[k] || String(k).replace(/\s+/g, " ").trim(), t ]);
     }
     if (!placed) rows.push([ "Location", where ]);
-    return `<table class="${PIN_TABLE}" border="1" cellpadding="3" style="border-collapse:collapse;font-family:sans-serif;font-size:12px">` +
-      rows.map(([ k, v ]) => `<tr><th align="left" style="background:#eee">${escHtml(k)}</th><td>${escHtml(v).replace(/\r?\n/g, "<br>")}</td></tr>`).join("") + "</table>";
+    return `<table class="${PIN_TABLE}" border="1" cellpadding="3">` +
+      rows.map(([ k, v ]) => `<tr><th align="left">${escHtml(k)}</th><td>${escHtml(v).replace(/\r?\n/g, "<br>")}</td></tr>`).join("") + "</table>";
   }
 
   const escXml = s => String(s ?? "").replace(/[<>&"']/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[c]))
@@ -182,7 +185,7 @@
    * format: "geojson" | "kml" | "gpx". Returns { head, point(name, lat, lon, props), tail, ext, mime }
    * where props is a list of [ key, value ] pairs. Build the file as head + points + tail.
    * opts (KML): colour: false for plain pins even when a kind is given; typed: the names of
-   * the columns the coordinate was typed in.
+   * the columns the coordinate was typed in; table: false leaves the pop-up table out (smaller files).
    */
   function textWriter(format, title, opts) {
     const o = opts || {};
@@ -204,12 +207,13 @@
     if (format === "kml") {
       return {
         ext: "kml", mime: "application/vnd.google-earth.kml+xml",
-        head: `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${escXml(title)}</name>\n${KML_STYLES}\n`,
+        head: `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${escXml(title)}</name>\n${kmlStyles(o.table !== false)}\n`,
         // kind ("ok", "fixed", "check", "bad", "confirmed") colours the pin; leave it out for plain pins.
         point(name, lat, lon, props, kind) {
           const data = props.filter(p => p[1] !== "" && p[1] != null).map(([ k, v ]) => `<Data name="${escXml(k)}"><value>${escXml(v)}</value></Data>`).join("");
           const style = o.colour !== false && kind && KML_COLOURS[kind] ? kind : "pin";
-          return `<Placemark><name>${escXml(name)}</name><description><![CDATA[${pinTable(lat, lon, props, kind, o.typed)}]]></description><styleUrl>#${style}</styleUrl>${data ? `<ExtendedData>${data}</ExtendedData>` : ""}<Point><coordinates>${num(lon)},${num(lat)},0</coordinates></Point></Placemark>\n`;
+          const table = o.table === false ? "" : `<description><![CDATA[${pinTable(lat, lon, props, kind, o.typed)}]]></description>`;
+          return `<Placemark><name>${escXml(name)}</name>${table}<styleUrl>#${style}</styleUrl>${data ? `<ExtendedData>${data}</ExtendedData>` : ""}<Point><coordinates>${num(lon)},${num(lat)},0</coordinates></Point></Placemark>\n`;
         },
         tail: "</Document></kml>\n"
       };
@@ -436,6 +440,8 @@
     let i = head.findIndex(h => NAME_KEY.test(String(h ?? "").trim()));
     if (i < 0) i = head.findIndex(h => /name/i.test(h));
     if (i < 0) i = head.findIndex(h => /village|locality|site|place/i.test(h));
+    // then something that tells rows apart: an ID or code, a plot, its owner (not a serial number)
+    if (i < 0) i = head.findIndex(h => /\b(id|code|plot|parcel|khasra|survey ?no|owner|farmer|holder|title|label)\b/i.test(h));
     return i;
   }
 

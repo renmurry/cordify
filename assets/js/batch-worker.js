@@ -13,7 +13,7 @@
  *   repaired   rows the page rebuilt with Repair, so the exports include them
  * To cancel, the page simply ends the worker and starts a new one.
  */
-importScripts("core.js?v=3", "repair-engine.js?v=7", "pinpoint.js?v=3", "systems.js?v=3", "batch-core.js?v=8", "geo-io.js?v=3");
+importScripts("core.js?v=3", "repair-engine.js?v=7", "pinpoint.js?v=3", "systems.js?v=3", "batch-core.js?v=9", "geo-io.js?v=4");
 
 const B = self.CordifyBatchCore;
 const PROJ4 = "../vendor/proj4.js";   // the same copy index.html loads
@@ -278,7 +278,7 @@ async function exportGeo(m) {
     importScripts(m.sqlJs + "sql-wasm.js");
     pkg = G.gpkg(await self.initSqlJs({ locateFile: f => m.sqlJs + f }));
   } else {
-    w = G.textWriter(m.format, m.title || "Cordify", { colour: m.colour, typed });
+    w = G.textWriter(m.format, m.title || "Cordify", { colour: m.colour, typed, table: m.table });
   }
   const blobs = [];
   let parts = w ? [ w.head ] : [], size = 0, head = null, nameCol = -1, i = 0;
@@ -291,7 +291,7 @@ async function exportGeo(m) {
     if (!text.trim()) return;
     if (!head) {
       head = B.parseCsvRecord(text, d).map((c, j) => c.replace(/\s+/g, " ").trim() || `Column ${j + 1}`);
-      nameCol = G.labelColumn(head);
+      nameCol = m.label && head.includes(m.label) ? head.indexOf(m.label) : G.labelColumn(head);
       typed.push(...(big.cfg.mode === "one" ? [ big.cfg.one ] : [ big.cfg.lat, big.cfg.lon ]).map(j => head[j]));
       keepIdx = head.map((h, j) => j).filter(j => keepName(head[j]));
       if (isPkg) tb = pkg.table(m.title, keepIdx.map(j => ({ name: head[j], type: "TEXT" })).concat(addIdx.map(j => ({ name: added[j], type: G.NUMERIC.test(added[j]) ? "DOUBLE" : "TEXT" }))));

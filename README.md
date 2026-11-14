@@ -86,7 +86,10 @@ formats, with history, mapping, and batch (spreadsheet) conversion.
   are listed in their own file so none go missing. Clicking a KML or KMZ pin
   shows its columns as a table in any viewer, with the location on one row;
   an "OK" status, and the typed coordinate on a green pin, are left out.
-  The same export is in Repair and on the sheet.
+  The table can be turned off for smaller files. Pins are named by a column
+  you choose, or by Cordify's pick: a name, a place, then an ID, plot or
+  owner. Dates are written as 2026-03-15 (from a CSV, as they were typed)
+  instead of Excel's day count. The same export is in Repair and on the sheet.
 - **History** — every conversion is saved locally in your browser (in
   IndexedDB, so tens of thousands fit). You can
   review, export (JSON/CSV), or clear it.
